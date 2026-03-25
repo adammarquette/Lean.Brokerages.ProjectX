@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.3.11512.155 d18.3
+VisualStudioVersion = 18.3.11512.155
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect", "..\Lean\Common\QuantConnect.csproj", "{477827EE-5908-48AB-B6A4-DAB6E85D96DF}"
 EndProject
@@ -20,6 +20,12 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantConnect.ProjectXBrokerage.Tests", "QuantConnect.ProjectXBrokerage.Tests\QuantConnect.ProjectXBrokerage.Tests.csproj", "{FD9592F3-C203-613F-03E0-A27F0CD2D2EF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantConnect.ProjectXBrokerage.ToolBox", "QuantConnect.ProjectXBrokerage.ToolBox\QuantConnect.ProjectXBrokerage.ToolBox.csproj", "{D01BBEE8-56AD-0308-9BEB-505170A435EC}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentation", "{BB8AE49A-7566-4C2B-B060-2B2C435F50F5}"
+	ProjectSection(SolutionItems) = preProject
+		PRD.md = PRD.md
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
