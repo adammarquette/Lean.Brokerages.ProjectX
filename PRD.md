@@ -1,7 +1,7 @@
 # ProjectX Lean Brokerage Integration
 
 **Status:** Phase 1 - Foundation Complete | Phase 2 - Core Trading (Planning)  
-**Last Updated:** January 2025  
+**Last Updated:** March 25, 2026
 **Project Lead:** Marquette Speculations  
 **Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
 
@@ -12,7 +12,7 @@ The ProjectX Lean Brokerage is a comprehensive integration solution that enables
 ## Project Scope
 
 ### Motivation
-The LEAN engine currently lacks native support for the ProjectX trading platform, preventing algorithmic traders from leveraging ProjectX's competitive advantages:
+The LEAN engine currently lacks native support for the ProjectX trading platform, preventing student algorithmic traders from leveraging ProjectX's (and the Prop Firms it supports) competitive advantages:
 - Advanced futures market access
 - Competitive commission structures
 - Real-time market data feeds
