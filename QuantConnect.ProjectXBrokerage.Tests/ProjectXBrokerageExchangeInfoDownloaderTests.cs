@@ -19,15 +19,15 @@ using QuantConnect.Util;
 using System;
 using System.Linq;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
-    [TestFixture, Ignore("This test requires a configured TemplateExchangeInfoDownloader")]
-    public class TemplateExchangeInfoDownloaderTests
+    [TestFixture, Ignore("This test requires a configured ProjectXBrokerageExchangeInfoDownloader")]
+    public class ProjectXBrokerageExchangeInfoDownloaderTests
     {
         [Test]
         public void GetsExchangeInfo()
         {
-            var eid = Composer.Instance.GetExportedValueByTypeName<IExchangeInfoDownloader>("TemplateExchangeInfoDownloader");
+            var eid = Composer.Instance.GetExportedValueByTypeName<IExchangeInfoDownloader>("ProjectXBrokerageExchangeInfoDownloader");
             var tickers = eid.Get().ToList();
 
             Assert.IsTrue(tickers.Any());

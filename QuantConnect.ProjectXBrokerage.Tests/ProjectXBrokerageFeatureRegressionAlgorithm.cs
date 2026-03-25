@@ -27,7 +27,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
     /// <summary>
     /// This algorithm tests the order types, security types, data types
