@@ -16,7 +16,7 @@
 using QuantConnect.Orders;
 using System.Collections.Generic;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
     public class InteractiveBrokersBrokerageRegressionAlgorithm : TemplateFeatureRegressionAlgorithm
     {

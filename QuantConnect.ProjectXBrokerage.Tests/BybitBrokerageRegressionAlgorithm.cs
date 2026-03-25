@@ -13,7 +13,7 @@
  * limitations under the License.
 */
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
     public class BybitBrokerageRegressionAlgorithm : TemplateFeatureRegressionAlgorithm
     {
