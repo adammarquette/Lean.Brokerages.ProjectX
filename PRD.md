@@ -1,24 +1,27 @@
-# ProjectX Lean Brokerage Integration
+# ProjectX LEAN Brokerage Integration
 
 **Status:** Phase 1 - Foundation Complete | Phase 2 - Core Trading (Planning)  
-**Last Updated:** March 25, 2026
+**Last Updated:** March 2026
 **Project Lead:** Marquette Speculations  
 **Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
 
 ## Executive Summary
 
-The ProjectX Lean Brokerage is a comprehensive integration solution that enables algorithmic trading of futures contracts with the ProjectX platform through the QuantConnect LEAN Engine. This integration provides seamless connectivity between LEAN's backtesting and live trading capabilities with ProjectX's trading infrastructure, focusing initially on futures markets with the architecture designed for future expansion to additional asset classes.
+The ProjectX Lean Brokerage is a comprehensive integration solution that enables 
+algorithmic trading of futures contracts with the ProjectX platform through the 
+QuantConnect LEAN Engine. This integration provides seamless connectivity 
+between LEAN's backtesting and live trading capabilities with ProjectX's trading 
+infrastructure, focusing initially on futures markets with the architecture 
+designed for future expansion to additional asset classes.
 
 ## Project Scope
 
 ### Motivation
-The LEAN engine currently lacks native support for the ProjectX trading platform, preventing student algorithmic traders from leveraging ProjectX's (and the Prop Firms it supports) competitive advantages:
-- Advanced futures market access
-- Competitive commission structures
-- Real-time market data feeds
-- Institutional-grade execution infrastructure
-
-This integration bridges that gap, allowing quantitative traders to execute their LEAN-developed strategies directly on ProjectX while maintaining full compatibility with LEAN's ecosystem.
+The LEAN engine currently lacks native support for the ProjectX trading platform, 
+preventing traders at several proprietary trading firms from leveraging the 
+LEAN engine as an algorithmic trading platform. This integration bridges that 
+gap, allowing quantitative traders to execute their LEAN-developed strategies 
+directly on ProjectX while maintaining full compatibility with LEAN's ecosystem.
 
 ### Primary Objectives
 1. **Full Brokerage Integration** - Implement all required LEAN interfaces following [contribution guidelines](https://www.quantconnect.com/docs/v2/lean-engine/contributions/brokerages)
@@ -38,7 +41,6 @@ This integration bridges that gap, allowing quantitative traders to execute thei
 - **Quantitative Traders** - Professionals developing and deploying algorithmic futures strategies
 - **Systematic Traders** - Traders operating rule-based systems requiring automated execution
 - **Research Teams** - Quantitative researchers needing access to ProjectX futures data
-- **Technology Partners** - Developers integrating LEAN with ProjectX infrastructure
 
 ### Key Assumptions & Constraints
 
@@ -62,6 +64,23 @@ This integration bridges that gap, allowing quantitative traders to execute thei
 - [ ] Documentation approved by code review
 - [ ] Performance benchmarks meeting LEAN standards (< 100ms order latency, < 1s data lag)
 
+## User Stories
+### Story 1: Futures Day Trader
+As a futures day trader, I want to use my LEAN algorithm with the ProjectX platform so that I can execute my strategies with low latency.
+
+**Acceptance Criteria:**
+- Order latency <100ms
+- Real-time data with <1s lag
+- Easy configuration setup
+
+### Story 2: Researcher
+As a quantitative researcher, I want to backtest strategies using ProjectX historical data so that I can validate my models.
+
+**Acceptance Criteria:**
+- Access to 5+ years of historical data
+- Support for all major futures contracts
+- Fast data downloads
+
 ## Technical Architecture
 
 ### Core Components
@@ -80,6 +99,7 @@ Following LEAN's brokerage architecture, this integration implements:
 - Account and holdings synchronization
 - Connection state management
 - Real-time order and fill event handling
+- WebSocket management for market data and account updates
 
 #### 3. ISymbolMapper
 **Purpose:** Symbol translation between LEAN and ProjectX formats
@@ -96,7 +116,7 @@ Following LEAN's brokerage architecture, this integration implements:
 - **Margin Requirements:** Initial and maintenance margin for futures
 - **Contract Specifications:** Tick size, multiplier, settlement rules
 - **Market Hours:** Futures trading sessions (regular, extended, electronic)
-- **Buying Power:** Real-time margin calculation for position sizing
+- **Buying Power:** Real-time cash calculation for position sizing
 
 #### 5. IDataQueueHandler
 **Purpose:** Real-time market data streaming
@@ -133,7 +153,7 @@ The core algorithmic trading engine that provides:
 - Data management and normalization
 - Risk management and portfolio construction tools
 
-**Reference:** https://github.com/QuantConnect/Lean  
+**Reference:** https://github.com/adammarquette/Lean
 **Version Compatibility:** .NET 10  
 **Key Integration Points:**
 - `Lean/Brokerages/` - Brokerage implementations
@@ -205,7 +225,7 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 
 ## Implementation Phases
 
-### Phase 1: Foundation Setup ✅ COMPLETE
+### Phase 1: Foundation Setup ✅ IN PROGRESS
 - [x] Repository initialization and structure
 - [x] Project naming conventions (ProjectXBrokerage)
 - [x] Basic factory stub (IBrokerageFactory)
@@ -213,16 +233,16 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 - [x] Project references and dependencies
 - [x] Build system configuration (.NET 10)
 - [x] Initial documentation (README, PRD)
-- [ ] Configuration schema definition (config.json)
+- [x] Configuration schema definition (config.json)
 - [ ] Logging infrastructure setup
 
 **Deliverables:**
-- ✅ Compilable solution with proper project structure
-- ✅ Factory creates brokerage instance (stub)
-- ✅ PRD and architecture documentation
-- ⏳ Configuration file schema
+- [x] Compilable solution with proper project structure
+- [x] Factory creates brokerage instance (stub)
+- [x] PRD and architecture documentation
+- [x] Configuration file schema
 
-### Phase 2: Core Trading Implementation 🔄 IN PROGRESS
+### Phase 2: Core Trading Implementation
 **Objective:** Implement core IBrokerage interface for order execution and account management
 
 **Tasks:**
@@ -707,6 +727,86 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
   - Include test results
   - Request reviews from maintainers
 
+## Known Limitations
+
+This section documents intentional limitations and design decisions that define the scope of the ProjectX brokerage integration.
+
+### Trading Style Constraints
+
+**Not Optimized for High-Frequency Trading (HFT)**
+
+This brokerage integration is **not designed or optimized** for high-frequency trading strategies. The architecture prioritizes:
+- **Reliability** - Robust error handling and connection management
+- **Data Integrity** - Accurate order tracking and position reconciliation  
+- **Maintainability** - Clean code and comprehensive testing
+
+HFT strategies requiring sub-millisecond latency and ultra-high order throughput should consider:
+- Native exchange APIs with co-location
+- Specialized HFT infrastructure
+- Direct market access (DMA) solutions
+
+**Supported Trading Styles:**
+- ✅ **Systematic Trading** - Rule-based strategies with moderate order frequency (1-10 orders/minute)
+- ✅ **Algorithmic Day Trading** - Intraday strategies with reasonable execution requirements
+- ✅ **Swing Trading** - Multi-day position holding strategies
+- ✅ **Statistical Arbitrage** - Mean reversion and pairs trading (non-HFT timeframes)
+- ✅ **Trend Following** - Momentum-based strategies on various timeframes
+
+**Not Supported:**
+- ❌ **High-Frequency Trading** - Strategies requiring <10ms latency or >100 orders/second
+- ❌ **Market Making** - Continuous quote updates and sub-second order placement
+- ❌ **Latency Arbitrage** - Strategies exploiting microsecond price discrepancies
+
+### Asset Class Limitations (Phase 1-4)
+
+**Futures Only**
+- Initial releases (Phases 1-4) support futures contracts exclusively
+- Equities, options, forex, and crypto support planned for future phases
+- Symbol mapper focused on futures ticker formats
+- Margin calculations specific to futures contracts
+
+**Future Expansion:**
+- Phase 5+: Equities support
+- Phase 6+: Options on futures
+- Phase 7+: Forex and crypto futures
+
+### Technical Constraints
+
+**Rate Limits**
+- Default order rate limit: 10 orders/second (configurable to max 100/second)
+- Default data rate limit: 50 requests/second (configurable to max 1000/second)
+- Maximum concurrent subscriptions: 100 symbols (configurable to 500)
+- Exceeded limits trigger automatic queuing, not rejection
+
+**Latency Expectations**
+- Target order latency: <100ms (p95)
+- Market data lag: <1 second (p99)
+- WebSocket reconnection: <5 seconds
+- Not suitable for strategies requiring <10ms execution
+
+**Data Availability**
+- Historical data depth subject to ProjectX API limitations
+- Tick data availability varies by contract and exchange
+- No Level II (market depth) data in Phase 1-4
+- Real-time data limited to Trade, Quote, and Open Interest ticks
+
+### Operational Constraints
+
+**Market Hours**
+- Trading restricted to exchange-defined market hours
+- No after-hours execution for contracts without extended sessions
+- Settlement times respected per exchange rules
+
+**Order Types (Phase 1-4)**
+- Supported: Market, Limit, Stop Market, Stop Limit
+- Not Supported: Bracket orders, OCO (One-Cancels-Other), trailing stops
+- Advanced order types may be added in future phases
+
+**Account Types**
+- Live trading requires funded ProjectX account
+- Paper trading uses ProjectX sandbox environment
+- No simulated brokerage mode (must have ProjectX account)
+
 ## Risk Management & Mitigation
 
 ### Technical Risks
@@ -799,6 +899,15 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
   - [ ] Graceful handling of API rate limits
   - [ ] 99.9% uptime during trading hours (after deployment)
 
+- [ ] **Performance Benchmarks**
+  - [ ] Order Latency (p50) <50ms
+  - [ ] Order Latency (p95) <100ms
+  - [ ] Order Latency (p99) <200ms
+  - [ ] Market Data Lag (p99) <1s
+  - [ ] Historical Query (1yr daily) <5s
+  - [ ] Memory Usage (8hr session) <500MB
+  - [ ] WebSocket Reconnect Time <5s
+
 ### Business Metrics
 - [ ] **Adoption**
   - [ ] Successful live trading with real account (validation)
@@ -840,9 +949,127 @@ To consider the project complete and ready for release:
 - [MarqSpec.Client.ProjectX Repository](https://github.com/adammarquette/MarqSpec.Client.ProjectX)
 - [QuantConnect Documentation](https://www.quantconnect.com/docs/v2/)
 
+### Project Documentation Files
+- [CONFIGURATION.md](./CONFIGURATION.md) - Complete configuration guide
+- [DIAGRAMS.md](./DIAGRAMS.md) - Architecture diagram documentation
+- [config-schema.json](./config-schema.json) - JSON Schema for validation
+- [config.template.json](./config.template.json) - Configuration template
+
 ## Appendix
 
+### Configuration Schema
+
+The ProjectX brokerage integration uses LEAN's standard configuration mechanism, where settings are provided through a JSON configuration file or environment variables. Configuration keys follow LEAN's naming convention using lowercase with hyphens.
+
+#### Configuration Keys
+
+| Key | Type | Required | Default | Description |
+|-----|------|----------|---------|-------------|
+| `brokerage` | string | Yes | - | Must be set to `"ProjectXBrokerage"` |
+| `brokerage-project-x-api-key` | string | Yes | - | ProjectX API key for authentication |
+| `brokerage-project-x-api-secret` | string | Yes | - | ProjectX API secret for authentication |
+| `brokerage-project-x-environment` | string | No | `"production"` | Trading environment: `"production"` or `"sandbox"` |
+| `brokerage-project-x-api-url` | string | No | Auto | Custom API base URL (overrides environment default) |
+| `brokerage-project-x-websocket-url` | string | No | Auto | Custom WebSocket URL (overrides environment default) |
+| `brokerage-project-x-order-rate-limit` | integer | No | `10` | Maximum orders per second (burst limit) |
+| `brokerage-project-x-data-rate-limit` | integer | No | `50` | Maximum data requests per second |
+| `brokerage-project-x-max-subscriptions` | integer | No | `100` | Maximum concurrent symbol subscriptions |
+| `brokerage-project-x-reconnect-attempts` | integer | No | `5` | Number of reconnection attempts before failure |
+| `brokerage-project-x-reconnect-delay` | integer | No | `1000` | Initial reconnection delay in milliseconds |
+| `brokerage-project-x-request-timeout` | integer | No | `30000` | HTTP request timeout in milliseconds |
+| `brokerage-project-x-websocket-timeout` | integer | No | `5000` | WebSocket ping/pong timeout in milliseconds |
+| `brokerage-project-x-enable-logging` | boolean | No | `true` | Enable detailed brokerage logging |
+| `brokerage-project-x-log-level` | string | No | `"Information"` | Log level: `"Trace"`, `"Debug"`, `"Information"`, `"Warning"`, `"Error"`, `"Critical"` |
+| `data-queue-handler` | string | No | - | Set to `"ProjectXBrokerage"` to use ProjectX for live data |
+| `history-provider` | string | No | - | Set to `"ProjectXBrokerage"` to use ProjectX for historical data |
+
+#### Environment-Specific URLs
+
+The brokerage automatically selects API endpoints based on the `brokerage-project-x-environment` setting:
+
+**Production Environment:**
+- REST API: `https://api.projectx.com/v1`
+- WebSocket: `wss://stream.projectx.com/v1`
+
+**Sandbox Environment:**
+- REST API: `https://api-sandbox.projectx.com/v1`
+- WebSocket: `wss://stream-sandbox.projectx.com/v1`
+
+#### Environment Variable Support
+
+All configuration keys can be set via environment variables using the `QC_` prefix with underscores instead of hyphens:
+
+```bash
+# Example: Setting API key via environment variable
+export QC_BROKERAGE_PROJECT_X_API_KEY="your-api-key"
+export QC_BROKERAGE_PROJECT_X_API_SECRET="your-api-secret"
+export QC_BROKERAGE_PROJECT_X_ENVIRONMENT="sandbox"
+```
+
+#### Security Considerations
+
+**⚠️ NEVER commit credentials to source control!**
+
+- Store credentials in environment variables or secure configuration management systems
+- Use separate API keys for development, testing, and production
+- Rotate API keys regularly
+- Restrict API key permissions to minimum required scope
+- Use sandbox environment for development and testing
+
+#### Configuration Validation
+
+The brokerage validates configuration on initialization and will throw detailed exceptions for:
+- Missing required parameters
+- Invalid environment values
+- Malformed URLs
+- Out-of-range numeric values
+- Invalid log level strings
+
+#### Advanced Configuration
+
+##### Rate Limiting Strategy
+
+The brokerage implements token bucket rate limiting:
+- `brokerage-project-x-order-rate-limit`: Controls burst order submissions (default: 10/second)
+- `brokerage-project-x-data-rate-limit`: Controls API request frequency (default: 50/second)
+- Exceeded limits trigger automatic request queuing
+
+**Recommended Settings by Trading Style:**
+- **Day Trading:** order-rate-limit: 10-15, data-rate-limit: 50-100
+- **Systematic Trading:** order-rate-limit: 5-10, data-rate-limit: 30-50  
+- **Swing Trading:** order-rate-limit: 3-5, data-rate-limit: 20-30
+
+**Important:** This brokerage is not designed for high-frequency trading (HFT). The architecture prioritizes reliability, data integrity, and proper order handling over ultra-low latency execution. For HFT strategies requiring sub-millisecond latency, consider using native exchange APIs with co-location.
+
+##### Reconnection Strategy
+
+WebSocket reconnection uses exponential backoff:
+- Initial delay: `brokerage-project-x-reconnect-delay` ms
+- Backoff multiplier: 2x per attempt
+- Maximum attempts: `brokerage-project-x-reconnect-attempts`
+- Connection state events emitted for monitoring
+
+##### Logging Configuration
+
+Enable verbose logging for troubleshooting:
+```json
+{
+  "brokerage-project-x-enable-logging": true,
+  "brokerage-project-x-log-level": "Debug"
+}
+```
+
+**Log Levels:**
+- `Trace`: All API requests/responses, WebSocket messages
+- `Debug`: Connection events, order submissions, data subscriptions
+- `Information`: Successful operations, state changes (default)
+- `Warning`: Rate limit warnings, retry attempts
+- `Error`: Failed operations, exceptions
+- `Critical`: Fatal errors requiring immediate attention
+
 ### Configuration Example
+
+#### Minimal Configuration (Live Trading)
 ```json
 {
   "job-project-id": "0",
@@ -857,46 +1084,264 @@ To consider the project complete and ready for release:
 }
 ```
 
+#### Complete Configuration (All Options)
+```json
+{
+  "job-project-id": "0",
+  "environment": "live",
+  "algorithm-type-name": "FuturesTradingAlgorithm",
+  "algorithm-language": "CSharp",
+  "parameters": {},
+
+  "brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "your-api-key",
+  "brokerage-project-x-api-secret": "your-api-secret",
+  "brokerage-project-x-environment": "production",
+  "brokerage-project-x-order-rate-limit": 10,
+  "brokerage-project-x-data-rate-limit": 50,
+  "brokerage-project-x-max-subscriptions": 100,
+  "brokerage-project-x-reconnect-attempts": 5,
+  "brokerage-project-x-reconnect-delay": 1000,
+  "brokerage-project-x-request-timeout": 30000,
+  "brokerage-project-x-websocket-timeout": 5000,
+  "brokerage-project-x-enable-logging": true,
+  "brokerage-project-x-log-level": "Information",
+
+  "data-queue-handler": "ProjectXBrokerage",
+  "history-provider": "ProjectXBrokerage"
+}
+```
+
+#### Development/Sandbox Configuration
+```json
+{
+  "job-project-id": "0",
+  "environment": "live",
+  "algorithm-type-name": "TestFuturesAlgorithm",
+  "algorithm-language": "CSharp",
+  "parameters": {},
+
+  "brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "sandbox-api-key",
+  "brokerage-project-x-api-secret": "sandbox-api-secret",
+  "brokerage-project-x-environment": "sandbox",
+  "brokerage-project-x-enable-logging": true,
+  "brokerage-project-x-log-level": "Debug",
+
+  "data-queue-handler": "ProjectXBrokerage",
+  "history-provider": "ProjectXBrokerage"
+}
+```
+
+#### Backtesting Configuration (Historical Data Only)
+```json
+{
+  "job-project-id": "0",
+  "environment": "backtesting",
+  "algorithm-type-name": "FuturesBacktestAlgorithm",
+  "algorithm-language": "CSharp",
+  "parameters": {},
+
+  "brokerage-project-x-api-key": "your-api-key",
+  "brokerage-project-x-api-secret": "your-api-secret",
+  "brokerage-project-x-environment": "production",
+
+  "history-provider": "ProjectXBrokerage"
+}
+```
+
+#### Custom API Endpoints Configuration
+```json
+{
+  "job-project-id": "0",
+  "environment": "live",
+  "algorithm-type-name": "BasicTemplateAlgorithm",
+  "algorithm-language": "CSharp",
+  "parameters": {},
+
+  "brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "your-api-key",
+  "brokerage-project-x-api-secret": "your-api-secret",
+  "brokerage-project-x-api-url": "https://custom-api.projectx.com/v1",
+  "brokerage-project-x-websocket-url": "wss://custom-stream.projectx.com/v1",
+
+  "data-queue-handler": "ProjectXBrokerage"
+}
+```
+
+#### Configuration for Local LEAN Deployment
+```json
+{
+  "environment": "live-paper",
+  "live-mode": true,
+
+  "live-mode-brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "your-api-key",
+  "brokerage-project-x-api-secret": "your-api-secret",
+  "brokerage-project-x-environment": "sandbox",
+
+  "data-queue-handler": ["ProjectXBrokerage"],
+  "data-folder": "./Data",
+
+  "live-holdings": [],
+  "live-cash-balance": {
+    "USD": 100000
+  }
+}
+```
+
+#### Test/Integration Configuration (config.json)
+```json
+{
+  "debug-mode": true,
+  "data-folder": "../../../../Lean/Data/",
+
+  "brokerage-project-x-api-key": "",
+  "brokerage-project-x-api-secret": "",
+  "brokerage-project-x-environment": "sandbox",
+  "brokerage-project-x-enable-logging": true,
+  "brokerage-project-x-log-level": "Trace"
+}
+```
+
+#### Schema Validation Example (JSON Schema)
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProjectX Brokerage Configuration",
+  "type": "object",
+  "required": ["brokerage", "brokerage-project-x-api-key", "brokerage-project-x-api-secret"],
+  "properties": {
+    "brokerage": {
+      "type": "string",
+      "const": "ProjectXBrokerage"
+    },
+    "brokerage-project-x-api-key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ProjectX API Key"
+    },
+    "brokerage-project-x-api-secret": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ProjectX API Secret"
+    },
+    "brokerage-project-x-environment": {
+      "type": "string",
+      "enum": ["sandbox", "production"],
+      "default": "production"
+    },
+    "brokerage-project-x-api-url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "brokerage-project-x-websocket-url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^wss://"
+    },
+    "brokerage-project-x-order-rate-limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 10
+    },
+    "brokerage-project-x-data-rate-limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 50
+    },
+    "brokerage-project-x-max-subscriptions": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 100
+    },
+    "brokerage-project-x-reconnect-attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 5
+    },
+    "brokerage-project-x-reconnect-delay": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 60000,
+      "default": 1000
+    },
+    "brokerage-project-x-request-timeout": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 300000,
+      "default": 30000
+    },
+    "brokerage-project-x-websocket-timeout": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 60000,
+      "default": 5000
+    },
+    "brokerage-project-x-enable-logging": {
+      "type": "boolean",
+      "default": true
+    },
+    "brokerage-project-x-log-level": {
+      "type": "string",
+      "enum": ["Trace", "Debug", "Information", "Warning", "Error", "Critical"],
+      "default": "Information"
+    },
+    "data-queue-handler": {
+      "type": "string"
+    },
+    "history-provider": {
+      "type": "string"
+    }
+  }
+}
+```
+
 ### Architecture Diagram
 
 ```mermaid
 graph TB
-    subgraph "User Layer"
+    subgraph User_Layer["User Layer"]
         User[Trading Algorithm]
         Config[Configuration<br/>API Keys, Settings]
     end
 
-    subgraph "LEAN Engine Core"
+    subgraph LEAN_Core["LEAN Engine Core"]
         AlgoFramework[Algorithm Framework]
         DataManager[Data Manager]
         OrderManager[Order Manager]
         PortfolioManager[Portfolio Manager]
     end
 
-    subgraph "ProjectX Brokerage Integration"
+    subgraph ProjectX_Integration["ProjectX Brokerage Integration"]
         Factory[ProjectXBrokerageFactory<br/>IBrokerageFactory]
-        
-        subgraph "Core Trading Components"
+
+        subgraph Core_Components["Core Trading Components"]
             Brokerage[ProjectXBrokerage<br/>IBrokerage]
             SymbolMapper[ProjectXSymbolMapper<br/>ISymbolMapper]
             BrokerageModel[ProjectXBrokerageModel<br/>IBrokerageModel]
         end
-        
-        subgraph "Data Components"
+
+        subgraph Data_Components["Data Components"]
             DataQueue[ProjectXDataQueueHandler<br/>IDataQueueHandler]
             HistoryProvider[ProjectXHistoryProvider<br/>IHistoryProvider]
             DataDownloader[ProjectXDataDownloader<br/>IDataDownloader]
         end
-        
-        subgraph "Fee Model"
+
+        subgraph Fee_Component["Fee Model"]
             FeeModel[ProjectXFeeModel<br/>IFeeModel]
         end
     end
 
-    subgraph "API Client Layer"
+    subgraph Client_Layer["API Client Layer"]
         APIClient[MarqSpec.Client.ProjectX<br/>API Client Library]
-        
-        subgraph "Client Modules"
+
+        subgraph Client_Modules["Client Modules"]
             AuthModule[Authentication]
             OrderModule[Order Management]
             MarketDataModule[Market Data]
@@ -904,7 +1349,7 @@ graph TB
         end
     end
 
-    subgraph "ProjectX Platform"
+    subgraph Platform_Layer["ProjectX Platform"]
         API[ProjectX REST API]
         WS[ProjectX WebSocket]
         Platform[Trading Infrastructure]
@@ -913,49 +1358,49 @@ graph TB
     %% User to LEAN connections
     User -->|Creates & Runs| AlgoFramework
     Config -->|Loads| Factory
-    
+
     %% LEAN to Integration connections
     AlgoFramework -->|Requests Data| DataManager
     AlgoFramework -->|Places Orders| OrderManager
     AlgoFramework -->|Queries Portfolio| PortfolioManager
-    
+
     DataManager -->|Subscribe/Stream| DataQueue
     DataManager -->|Historical Requests| HistoryProvider
     OrderManager -->|Execute Orders| Brokerage
     PortfolioManager -->|Account Sync| Brokerage
-    
+
     %% Factory connections
     Factory -->|Instantiates| Brokerage
     Factory -->|Configures| DataQueue
     Factory -->|Configures| HistoryProvider
-    
+
     %% Integration internal connections
     Brokerage -->|Translates Symbols| SymbolMapper
     Brokerage -->|Validates Orders| BrokerageModel
     Brokerage -->|Calculates Fees| FeeModel
     DataQueue -->|Maps Symbols| SymbolMapper
     HistoryProvider -->|Maps Symbols| SymbolMapper
-    
+
     %% Integration to Client connections
     Brokerage -->|Order Operations| APIClient
     Brokerage -->|Account Sync| APIClient
     DataQueue -->|Real-time Data| APIClient
     HistoryProvider -->|Historical Data| APIClient
     DataDownloader -->|Bulk Downloads| APIClient
-    
-    %% Client internal
+
+    %% Client internal connections
     APIClient -->|Uses| AuthModule
     APIClient -->|Uses| OrderModule
     APIClient -->|Uses| MarketDataModule
     APIClient -->|Uses| AccountModule
-    
-    %% Client to Platform
+
+    %% Client to Platform connections
     AuthModule -->|Authenticates| API
     OrderModule -->|REST Calls| API
     MarketDataModule -->|Streams| WS
     MarketDataModule -->|Queries| API
     AccountModule -->|Queries| API
-    
+
     API -->|Connected to| Platform
     WS -->|Connected to| Platform
 
@@ -965,7 +1410,7 @@ graph TB
     classDef integrationLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef clientLayer fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     classDef platformLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    
+
     class User,Config userLayer
     class AlgoFramework,DataManager,OrderManager,PortfolioManager leanLayer
     class Factory,Brokerage,SymbolMapper,BrokerageModel,DataQueue,HistoryProvider,DataDownloader,FeeModel integrationLayer
@@ -977,107 +1422,152 @@ graph TB
 
 ```mermaid
 classDiagram
+    %% LEAN Core Interfaces
     class IBrokerageFactory {
         <<interface>>
-        +CreateBrokerage()
-        +GetBrokerageModel()
-        +Dispose()
+        +CreateBrokerage() IBrokerage
+        +GetBrokerageModel(IOrderProvider) IBrokerageModel
+        +Dispose() void
     }
-    
+
     class IBrokerage {
         <<interface>>
-        +PlaceOrder()
-        +UpdateOrder()
-        +CancelOrder()
-        +GetAccountHoldings()
-        +IsConnected
-        +Connect()
-        +Disconnect()
+        +PlaceOrder(Order) bool
+        +UpdateOrder(Order) bool
+        +CancelOrder(Order) bool
+        +GetAccountHoldings() List~Holding~
+        +GetCashBalance() List~CashAmount~
+        +IsConnected bool
+        +Connect() void
+        +Disconnect() void
     }
-    
+
     class ISymbolMapper {
         <<interface>>
-        +GetLeanSymbol()
-        +GetBrokerageSymbol()
+        +GetLeanSymbol(string) Symbol
+        +GetBrokerageSymbol(Symbol) string
     }
-    
+
     class IBrokerageModel {
         <<interface>>
-        +CanSubmitOrder()
-        +GetFeeModel()
-        +GetLeverage()
-        +GetMarginRemaining()
+        +CanSubmitOrder(Security, Order) bool
+        +CanUpdateOrder(Security, Order) bool
+        +CanExecuteOrder(Security, Order) bool
+        +GetFeeModel(Security) IFeeModel
+        +GetLeverage(Security) decimal
+        +GetMarginRemaining(Portfolio) decimal
     }
-    
+
     class IDataQueueHandler {
         <<interface>>
-        +Subscribe()
-        +Unsubscribe()
-        +SetJob()
+        +Subscribe(SubscriptionDataConfig, EventHandler) void
+        +Unsubscribe(SubscriptionDataConfig) void
+        +SetJob(LiveNodePacket) void
     }
-    
+
     class IHistoryProvider {
         <<interface>>
-        +GetHistory()
-        +Initialize()
+        +GetHistory(HistoryRequest) IEnumerable~BaseData~
+        +Initialize(HistoryProviderInitializeParameters) void
     }
-    
+
     class IDataDownloader {
         <<interface>>
-        +Get()
+        +Get(DataDownloaderGetParameters) IEnumerable~BaseData~
     }
-    
+
     class IFeeModel {
         <<interface>>
-        +GetOrderFee()
+        +GetOrderFee(OrderFeeParameters) OrderFee
     }
-    
+
+    %% ProjectX Implementations
     class ProjectXBrokerageFactory {
-        +BrokerageData
+        +BrokerageData Dictionary~string, string~
+        +CreateBrokerage(LiveNodePacket, IAlgorithm) IBrokerage
+        +GetBrokerageModel(IOrderProvider) IBrokerageModel
+        +Dispose() void
     }
-    
+
     class ProjectXBrokerage {
-        -_apiClient
-        -_symbolMapper
-        -_aggregator
+        -_apiClient MarqSpecClient
+        -_symbolMapper ProjectXSymbolMapper
+        -_aggregator IDataAggregator
+        -_webSocket WebSocketClient
+        +PlaceOrder(Order) bool
+        +CancelOrder(Order) bool
+        +GetAccountHoldings() List~Holding~
+        +Connect() void
+        +Disconnect() void
     }
-    
+
     class ProjectXSymbolMapper {
-        +GetLeanSymbol()
-        +GetBrokerageSymbol()
+        -_futuresMap Dictionary~string, Symbol~
+        +GetLeanSymbol(string) Symbol
+        +GetBrokerageSymbol(Symbol) string
+        -ParseFuturesTicker(string) Symbol
     }
-    
+
     class ProjectXBrokerageModel {
-        +DefaultMarkets
-        +MarketMap
+        +DefaultMarkets Dictionary~SecurityType, string~
+        +MarketMap Dictionary~SecurityType, string~
+        +CanSubmitOrder(Security, Order) bool
+        +GetFeeModel(Security) IFeeModel
     }
-    
+
     class ProjectXDataQueueHandler {
-        -_subscriptionManager
+        -_subscriptionManager SubscriptionManager
+        -_webSocket WebSocketClient
+        +Subscribe(SubscriptionDataConfig, EventHandler) void
+        +Unsubscribe(SubscriptionDataConfig) void
     }
-    
+
+    class ProjectXHistoryProvider {
+        -_apiClient MarqSpecClient
+        +GetHistory(HistoryRequest) IEnumerable~BaseData~
+        +Initialize(HistoryProviderInitializeParameters) void
+    }
+
+    class ProjectXBrokerageDownloader {
+        -_apiClient MarqSpecClient
+        +Get(DataDownloaderGetParameters) IEnumerable~BaseData~
+    }
+
+    class ProjectXFeeModel {
+        +GetOrderFee(OrderFeeParameters) OrderFee
+        -CalculateExchangeFees(Order) decimal
+    }
+
+    %% External Dependency
     class MarqSpecClient {
-        +OrderManagement
-        +MarketData
-        +AccountInfo
-        +Authentication
+        <<external>>
+        +OrderManagement OrderApi
+        +MarketData DataApi
+        +AccountInfo AccountApi
+        +Authentication AuthApi
     }
-    
-    IBrokerageFactory <|.. ProjectXBrokerageFactory
-    IBrokerage <|.. ProjectXBrokerage
-    ISymbolMapper <|.. ProjectXSymbolMapper
-    IBrokerageModel <|.. ProjectXBrokerageModel
-    IDataQueueHandler <|.. ProjectXDataQueueHandler
-    IHistoryProvider <|.. ProjectXBrokerage
-    IDataDownloader <|.. ProjectXBrokerageDownloader
-    IFeeModel <|.. ProjectXFeeModel
-    
+
+    %% Inheritance Relationships
+    IBrokerageFactory <|.. ProjectXBrokerageFactory : implements
+    IBrokerage <|.. ProjectXBrokerage : implements
+    ISymbolMapper <|.. ProjectXSymbolMapper : implements
+    IBrokerageModel <|.. ProjectXBrokerageModel : implements
+    IDataQueueHandler <|.. ProjectXDataQueueHandler : implements
+    IHistoryProvider <|.. ProjectXHistoryProvider : implements
+    IDataDownloader <|.. ProjectXBrokerageDownloader : implements
+    IFeeModel <|.. ProjectXFeeModel : implements
+
+    %% Composition Relationships
     ProjectXBrokerageFactory --> ProjectXBrokerage : creates
     ProjectXBrokerageFactory --> ProjectXBrokerageModel : creates
     ProjectXBrokerage --> ProjectXSymbolMapper : uses
     ProjectXBrokerage --> MarqSpecClient : uses
-    ProjectXDataQueueHandler --> MarqSpecClient : uses
     ProjectXBrokerage --> ProjectXBrokerageModel : validates with
+    ProjectXDataQueueHandler --> MarqSpecClient : uses
+    ProjectXDataQueueHandler --> ProjectXSymbolMapper : uses
+    ProjectXHistoryProvider --> MarqSpecClient : uses
+    ProjectXHistoryProvider --> ProjectXSymbolMapper : uses
+    ProjectXBrokerageDownloader --> MarqSpecClient : uses
 ```
 
 ### Sequence Diagram
@@ -1088,79 +1578,93 @@ sequenceDiagram
     participant LEAN as LEAN Engine
     participant Factory as ProjectXBrokerageFactory
     participant Brokerage as ProjectXBrokerage
+    participant Mapper as ProjectXSymbolMapper
     participant Client as MarqSpec.Client.ProjectX
     participant ProjectX as ProjectX Platform
 
+    %% Initialization Phase
+    rect rgb(230, 245, 255)
+    Note over User,ProjectX: Initialization Phase
     User->>LEAN: Initialize Algorithm
     LEAN->>Factory: Create Brokerage Instance
-    Factory->>Factory: Parse Configuration
+    Factory->>Factory: Parse Configuration<br/>(API keys, settings)
     Factory->>Brokerage: Instantiate with credentials
     Brokerage->>Client: Initialize API Client
     Client->>ProjectX: Authenticate
     ProjectX-->>Client: Session Token
-    Client-->>Brokerage: Connected
-    Brokerage-->>LEAN: Ready
-    
-    Note over User,ProjectX: Live Trading Session
-    
-    User->>LEAN: Subscribe to Market Data
+    Client-->>Brokerage: Connection Established
+    Brokerage-->>LEAN: Brokerage Ready
+    LEAN-->>User: OnInitialize()
+    end
+
+    %% Market Data Subscription
+    rect rgb(232, 245, 233)
+    Note over User,ProjectX: Market Data Subscription
+    User->>LEAN: Subscribe to Market Data<br/>(e.g., ES, NQ futures)
     LEAN->>Brokerage: Subscribe(Symbol)
-    Brokerage->>Client: Subscribe to WebSocket
-    Client->>ProjectX: Subscribe Request
-    
-    loop Real-time Data Stream
-        ProjectX-->>Client: Market Data Updates
+    Brokerage->>Mapper: GetBrokerageSymbol(Symbol)
+    Mapper-->>Brokerage: "ESH25"
+    Brokerage->>Client: Subscribe to WebSocket<br/>(ticker: "ESH25")
+    Client->>ProjectX: WebSocket Subscribe Request
+    ProjectX-->>Client: Subscription Confirmed
+    end
+
+    %% Real-time Data Stream
+    rect rgb(255, 243, 224)
+    Note over User,ProjectX: Real-time Data Stream
+    loop Continuous Market Data
+        ProjectX-->>Client: Market Data Updates<br/>(tick, quote, trade)
         Client-->>Brokerage: Raw Tick Data
-        Brokerage-->>LEAN: LEAN Tick Format
+        Brokerage->>Mapper: GetLeanSymbol("ESH25")
+        Mapper-->>Brokerage: Symbol(ES, Future)
+        Brokerage->>Brokerage: Convert to LEAN Tick format
+        Brokerage-->>LEAN: LEAN Tick Data
+        LEAN->>LEAN: Aggregate to Slice
         LEAN-->>User: OnData(Slice)
     end
-    
-    User->>LEAN: Place Market Order
+    end
+
+    %% Order Placement
+    rect rgb(243, 229, 245)
+    Note over User,ProjectX: Order Execution
+    User->>LEAN: Place Market Order<br/>(Buy 1 ES contract)
     LEAN->>Brokerage: PlaceOrder(Order)
-    Brokerage->>Brokerage: Translate Symbol
-    Brokerage->>Client: Submit Order
-    Client->>ProjectX: REST API Order
-    ProjectX-->>Client: Order Confirmation
-    Client-->>Brokerage: Order Event
-    Brokerage-->>LEAN: Order Event
-    LEAN-->>User: OnOrderEvent(Event)
-    
-    ProjectX-->>Client: Fill Notification
-    Client-->>Brokerage: Fill Event
-    Brokerage-->>LEAN: Order Filled
-    LEAN-->>User: OnOrderEvent(Fill)
+    Brokerage->>Brokerage: Validate Order
+    Brokerage->>Mapper: GetBrokerageSymbol(Symbol)
+    Mapper-->>Brokerage: "ESH25"
+    Brokerage->>Client: Submit Order<br/>(ticker: "ESH25", qty: 1)
+    Client->>ProjectX: REST API Order Request
+    ProjectX-->>Client: Order Accepted<br/>(Order ID: 12345)
+    Client-->>Brokerage: Order Confirmation Event
+    Brokerage-->>LEAN: OrderEvent(Submitted)
+    LEAN-->>User: OnOrderEvent(Submitted)
+    end
+
+    %% Order Fill
+    rect rgb(252, 228, 236)
+    Note over User,ProjectX: Order Fill
+    ProjectX-->>Client: Fill Notification<br/>(Order ID: 12345, Filled)
+    Client-->>Brokerage: Fill Event<br/>(Price, Quantity, Time)
+    Brokerage->>Brokerage: Update Holdings
+    Brokerage-->>LEAN: OrderEvent(Filled)
+    LEAN->>LEAN: Update Portfolio
+    LEAN-->>User: OnOrderEvent(Filled)
+    end
+
+    %% Position Sync
+    rect rgb(230, 245, 255)
+    Note over User,ProjectX: Account Synchronization
+    LEAN->>Brokerage: GetAccountHoldings()
+    Brokerage->>Client: Query Account Positions
+    Client->>ProjectX: REST API Account Request
+    ProjectX-->>Client: Account Holdings Data
+    Client-->>Brokerage: Position List
+    Brokerage->>Mapper: Map Symbols to LEAN format
+    Mapper-->>Brokerage: LEAN Symbols
+    Brokerage-->>LEAN: Holdings List
+    LEAN->>LEAN: Reconcile Portfolio
+    end
 ```
-
-
-### Contact & Support
-- **Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
-- **Issues:** Use GitHub Issues for bug reports and feature requests
-- **Discussions:** Use GitHub Discussions for questions and community support
-- **Email:** [Add contact email if applicable]
-- **Discord:** [Add Discord channel if applicable]
-
-### FAQ
-
-**Q: Which futures contracts are supported?**  
-A: The integration supports all futures contracts available through the ProjectX platform. Initial testing focuses on major contracts (ES, NQ, CL, GC).
-
-**Q: Can I use this with QuantConnect Cloud?**  
-A: Cloud integration is optional (Phase 10). The integration is primarily designed for local LEAN deployment.
-
-**Q: What are the performance characteristics?**  
-A: Target metrics: <100ms order latency (p95), <1s data lag (p99). Actual performance depends on network and ProjectX infrastructure.
-
-**Q: How do I report bugs or request features?**  
-A: Use GitHub Issues with appropriate templates. Include LEAN version, .NET version, and reproducible steps.
-
-**Q: Is this production-ready?**  
-A: After Phase 10 completion and passing all acceptance criteria, yes. Until then, use for development and testing only.
-
-**Q: How do fees work?**  
-A: The integration implements ProjectX's fee structure. See Phase 8 and IFeeModel documentation for details.
-
-**Q: Can I contribute to development?**  
-A: Yes! See CONTRIBUTING.md for guidelines. Focus areas are listed in the current phase tasks.
 
 ### Glossary
 
@@ -1182,7 +1686,7 @@ A: Yes! See CONTRIBUTING.md for guidelines. Focus areas are listed in the curren
 
 ### Change Log
 
-#### v0.1.0 - Initial Setup (January 2025)
+#### v0.1.0 - Initial Setup (March 2026)
 - Repository structure initialized
 - Basic factory and brokerage stubs
 - Project references configured
@@ -1199,5 +1703,5 @@ A: Yes! See CONTRIBUTING.md for guidelines. Focus areas are listed in the curren
 ---
 
 **Document Version:** 2.0  
-**Last Updated:** January 2025  
+**Last Updated:** March 2026  
 **Next Review:** After Phase 2 Completion

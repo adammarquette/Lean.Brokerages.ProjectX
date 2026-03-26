@@ -1,5 +1,3 @@
-![lean-brokerage-template](https://user-images.githubusercontent.com/18473240/131904120-f67dab9c-cc6f-4c08-83e9-5d3ffafdb85d.png)
-
 # ProjectX Lean Brokerage
 
 ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin focused on futures trading (Phase 1). This repository implements the scaffolding and roadmap for connecting LEAN to the ProjectX trading platform.
@@ -28,17 +26,42 @@ Quick start
 
 Configuration
 -------------
-Test and local configuration should live in the test project config file. Example config keys (do NOT commit credentials):
+Configuration is managed through LEAN's standard JSON configuration files. Copy `config.template.json` to create your own configuration file, then fill in your credentials.
 
-```
+**⚠️ NEVER commit credentials to source control!**
+
+### Required Configuration
+```json
 {
-  "brokerage-api-url": "https://api.projectx.example",
-  "brokerage-app-key": "<app-key>",
-  "brokerage-secret": "<secret>",
-  "brokerage-refresh-token": "",
-  "brokerage-redirect-url": "https://127.0.0.1"
+  "brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "your-api-key",
+  "brokerage-project-x-api-secret": "your-api-secret",
+  "data-queue-handler": "ProjectXBrokerage"
 }
 ```
+
+### Configuration Options
+
+See the complete configuration documentation in `PRD.md` > Appendix > Configuration Schema for:
+- All available configuration keys and their descriptions
+- Environment-specific settings (sandbox vs production)
+- Rate limiting and performance tuning
+- Logging configuration
+- Security best practices
+
+### Environment Variables
+
+All configuration keys can be set via environment variables using the `QC_` prefix:
+```bash
+export QC_BROKERAGE_PROJECT_X_API_KEY="your-api-key"
+export QC_BROKERAGE_PROJECT_X_API_SECRET="your-api-secret"
+export QC_BROKERAGE_PROJECT_X_ENVIRONMENT="sandbox"
+```
+
+### Configuration Files
+- `config-schema.json` - JSON Schema for validation
+- `config.template.json` - Template with all options documented
+- See `PRD.md` for detailed configuration examples
 
 Development guidance
 --------------------

@@ -1,0 +1,15 @@
+{
+  "brokerage-api-url": "https://api.projectx.example",
+  "brokerage-environment": "sandbox", 
+  "brokerage-app-key": "<YOUR_APP_KEY>",
+  "brokerage-secret": "<YOUR_SECRET>",
+  "brokerage-authorization-code": "",
+  "brokerage-refresh-token": "",
+  "brokerage-redirect-url": "https://127.0.0.1",
+  "brokerage-scope": "read write",
+  "rate-limit-requests-per-second": 10,
+  "timeout-seconds": 30,
+  "log-level": "Information",
+  "default-account-id": "",
+  "notes": "DO NOT COMMIT real credentials. Use environment variables or CI secrets for sensitive values. This file is an example for local tests."
+}
