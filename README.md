@@ -1,11 +1,17 @@
 # ProjectX Lean Brokerage
 
+[![Build Status](https://github.com/adammarquette/Lean.Brokerages.ProjectX/actions/workflows/build.yml/badge.svg)](https://github.com/adammarquette/Lean.Brokerages.ProjectX/actions)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin focused on futures trading (Phase 1). This repository implements the scaffolding and roadmap for connecting LEAN to the ProjectX trading platform.
 
-Status: Phase 1 - Foundation Complete
-Last updated: March 25, 2026
-Project lead: Marquette Speculations
-Repository: https://github.com/adammarquette/Lean.Brokerages.ProjectX
+**Status**: Phase 1 - Foundation Complete  
+**Last updated**: March 25, 2026  
+**Project lead**: Marquette Speculations  
+**Repository**: https://github.com/adammarquette/Lean.Brokerages.ProjectX
+
+**Important:** This brokerage is designed for systematic and algorithmic trading strategies. It is **not optimized for high-frequency trading (HFT)** requiring sub-10ms latency or greater than 100 orders per second throughput.
 
 Overview
 --------
@@ -17,12 +23,37 @@ Goals
 - Provide historical and real-time data support
 - Deliver production-ready code with tests and CI
 
-Quick start
+Quick Start
 -----------
-1. Clone the repository and open the solution targeting .NET 10.
-2. Review `PRD.md` for project scope, architecture, and phased roadmap.
-3. Build the solution: `dotnet build`
-4. Run unit tests (when available): `dotnet test`
+
+### Prerequisites
+- **.NET 10 SDK (Preview)** or later ([Download](https://dotnet.microsoft.com/download/dotnet/10.0))
+- **LEAN Engine** repository cloned at `../Lean` relative to this repository
+
+### Setup
+```bash
+# Clone ProjectX Brokerage
+git clone https://github.com/adammarquette/Lean.Brokerages.ProjectX.git
+cd Lean.Brokerages.ProjectX
+
+# Clone LEAN Engine (required dependency)
+cd ..
+git clone https://github.com/adammarquette/Lean.git
+cd Lean.Brokerages.ProjectX
+
+# Restore and build
+dotnet restore
+dotnet build
+
+# Run tests (excludes tests requiring API credentials)
+dotnet test --filter "Category!=RequiresApiCredentials&Category!=Integration"
+```
+
+### Documentation
+- **[PRD.md](PRD.md)** - Complete project requirements, architecture, and roadmap
+- **[CONFIGURATION.md](CONFIGURATION.md)** - Detailed configuration guide
+- **[DIAGRAMS.md](DIAGRAMS.md)** - Architecture diagrams and documentation
+- **[CICD.md](CICD.md)** - Build system and CI/CD documentation
 
 Configuration
 -------------
@@ -79,7 +110,22 @@ Resources
 
 Contributing
 ------------
-Please open issues and PRs against this repository. Follow standard GitHub workflows and do not commit any secret or credential material.
+Please open issues and PRs against this repository. Follow the branching workflow:
+
+**Branching Strategy**: `master` ← `develop` ← `feature-branch`
+
+- **`master`**: Release branch (production-ready code)
+- **`develop`**: Active development branch
+- **Feature branches**: Branch off from `develop`, merge back to `develop` via PR
+
+**Workflow**:
+1. Create feature branch from `develop`: `git checkout -b feature/my-feature develop`
+2. Make changes and commit
+3. Open PR against `develop` branch
+4. After review and approval, feature merges to `develop`
+5. Periodic releases merge `develop` → `master`
+
+**Important**: Do not commit any secret or credential material.
 
 License
 -------

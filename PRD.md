@@ -231,7 +231,7 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 - [x] Basic factory stub (IBrokerageFactory)
 - [x] Basic brokerage stub (IBrokerage)
 - [x] Project references and dependencies
-- [x] Build system configuration (.NET 10)
+- [x] Build system configuration (.NET 10, GitHub Actions CI/CD with preview support)
 - [x] Initial documentation (README, PRD)
 - [x] Configuration schema definition (config.json)
 - [ ] Logging infrastructure setup
