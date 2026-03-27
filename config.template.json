@@ -1,0 +1,39 @@
+{
+  "_comment": "ProjectX Brokerage Configuration Template",
+  "_description": "Copy this file and fill in your credentials. DO NOT commit credentials to source control!",
+  
+  "environment": "live",
+  "algorithm-type-name": "YourAlgorithmName",
+  "algorithm-language": "CSharp",
+  
+  "_section_brokerage": "=== REQUIRED: Brokerage Configuration ===",
+  "brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "<YOUR_API_KEY>",
+  "brokerage-project-x-api-secret": "<YOUR_API_SECRET>",
+  "brokerage-project-x-environment": "sandbox",
+  
+  "_section_data": "=== OPTIONAL: Data Providers ===",
+  "data-queue-handler": "ProjectXBrokerage",
+  "history-provider": "ProjectXBrokerage",
+  
+  "_section_advanced": "=== OPTIONAL: Advanced Settings ===",
+  "_comment_rate_limits": "Adjust rate limits based on your API tier",
+  "brokerage-project-x-order-rate-limit": 10,
+  "brokerage-project-x-data-rate-limit": 50,
+  "brokerage-project-x-max-subscriptions": 100,
+  
+  "_comment_connection": "Connection and reconnection settings",
+  "brokerage-project-x-reconnect-attempts": 5,
+  "brokerage-project-x-reconnect-delay": 1000,
+  "brokerage-project-x-request-timeout": 30000,
+  "brokerage-project-x-websocket-timeout": 5000,
+  
+  "_comment_logging": "Logging configuration",
+  "brokerage-project-x-enable-logging": true,
+  "brokerage-project-x-log-level": "Information",
+  
+  "_section_custom": "=== OPTIONAL: Custom Endpoints (Advanced) ===",
+  "_comment_endpoints": "Only set these if using custom API endpoints",
+  "brokerage-project-x-api-url": "",
+  "brokerage-project-x-websocket-url": ""
+}

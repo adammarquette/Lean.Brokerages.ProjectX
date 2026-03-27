@@ -41,6 +41,17 @@
 # QC Config Files:
 # config.json
 
+# ProjectX Brokerage Configuration Files
+# Protect credentials from being committed
+config.production.json
+config.sandbox.json
+config.staging.json
+config.local.json
+config.*.json
+# Keep template files
+!config.template.json
+!config-schema.json
+
 # QC-C-Specific
 *Engine/bin/Debug/cache/data/*.zip
 */obj/*

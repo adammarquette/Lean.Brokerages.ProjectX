@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/adammarquette/Lean.Brokerages.ProjectX/config-schema.json",
+  "title": "ProjectX Brokerage Configuration Schema",
+  "description": "Configuration schema for ProjectX LEAN brokerage integration",
+  "type": "object",
+  "required": ["brokerage", "brokerage-project-x-api-key", "brokerage-project-x-api-secret"],
+  "properties": {
+    "brokerage": {
+      "type": "string",
+      "const": "ProjectXBrokerage",
+      "description": "Must be set to 'ProjectXBrokerage' to use this brokerage"
+    },
+    "brokerage-project-x-api-key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ProjectX API key for authentication"
+    },
+    "brokerage-project-x-api-secret": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ProjectX API secret for authentication"
+    },
+    "brokerage-project-x-environment": {
+      "type": "string",
+      "enum": ["sandbox", "production"],
+      "default": "production",
+      "description": "Trading environment: 'production' or 'sandbox'"
+    },
+    "brokerage-project-x-api-url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "description": "Custom API base URL (overrides environment default)"
+    },
+    "brokerage-project-x-websocket-url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^wss://",
+      "description": "Custom WebSocket URL (overrides environment default)"
+    },
+    "brokerage-project-x-order-rate-limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "description": "Maximum orders per second (burst limit). Not suitable for HFT strategies."
+    },
+    "brokerage-project-x-data-rate-limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 50,
+      "description": "Maximum data requests per second"
+    },
+    "brokerage-project-x-max-subscriptions": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 100,
+      "description": "Maximum concurrent symbol subscriptions"
+    },
+    "brokerage-project-x-reconnect-attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 5,
+      "description": "Number of reconnection attempts before failure"
+    },
+    "brokerage-project-x-reconnect-delay": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 60000,
+      "default": 1000,
+      "description": "Initial reconnection delay in milliseconds"
+    },
+    "brokerage-project-x-request-timeout": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 300000,
+      "default": 30000,
+      "description": "HTTP request timeout in milliseconds"
+    },
+    "brokerage-project-x-websocket-timeout": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 60000,
+      "default": 5000,
+      "description": "WebSocket ping/pong timeout in milliseconds"
+    },
+    "brokerage-project-x-enable-logging": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable detailed brokerage logging"
+    },
+    "brokerage-project-x-log-level": {
+      "type": "string",
+      "enum": ["Trace", "Debug", "Information", "Warning", "Error", "Critical"],
+      "default": "Information",
+      "description": "Logging level for brokerage operations"
+    },
+    "data-queue-handler": {
+      "type": "string",
+      "description": "Set to 'ProjectXBrokerage' to use ProjectX for live data"
+    },
+    "history-provider": {
+      "type": "string",
+      "description": "Set to 'ProjectXBrokerage' to use ProjectX for historical data"
+    }
+  },
+  "examples": [
+    {
+      "brokerage": "ProjectXBrokerage",
+      "brokerage-project-x-api-key": "your-api-key",
+      "brokerage-project-x-api-secret": "your-api-secret",
+      "brokerage-project-x-environment": "production",
+      "data-queue-handler": "ProjectXBrokerage"
+    },
+    {
+      "brokerage": "ProjectXBrokerage",
+      "brokerage-project-x-api-key": "sandbox-key",
+      "brokerage-project-x-api-secret": "sandbox-secret",
+      "brokerage-project-x-environment": "sandbox",
+      "brokerage-project-x-enable-logging": true,
+      "brokerage-project-x-log-level": "Debug",
+      "data-queue-handler": "ProjectXBrokerage"
+    }
+  ]
+}
