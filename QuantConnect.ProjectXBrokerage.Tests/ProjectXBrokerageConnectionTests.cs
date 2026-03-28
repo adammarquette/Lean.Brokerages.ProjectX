@@ -30,7 +30,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
     public class ProjectXBrokerageConnectionTests
     {
         private Mock<IDataAggregator> _mockAggregator;
-        private ProjectXBrokerage _brokerage;
+        private Brokerages.ProjectXBrokerage.ProjectXBrokerage _brokerage;
 
         [SetUp]
         public void SetUp()
@@ -61,7 +61,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void Constructor_InitializesWithCorrectState()
         {
             // Arrange & Act
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Assert
             Assert.IsFalse(_brokerage.IsConnected, "Brokerage should not be connected initially");
@@ -72,7 +72,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void Constructor_LoadsConfigurationCorrectly()
         {
             // Arrange & Act
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Assert - brokerage is created without throwing
             Assert.IsNotNull(_brokerage);
@@ -82,7 +82,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void IsConnected_ReturnsFalseByDefault()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act
             var isConnected = _brokerage.IsConnected;
@@ -95,11 +95,10 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void SetJob_UpdatesConfigurationFromJobPacket()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
             var job = new LiveNodePacket
             {
                 UserId = 123,
-                AlgorithmId = "test-algorithm",
                 BrokerageData = new Dictionary<string, string>
                 {
                     { "project-x-api-key", "job-api-key" },
@@ -116,7 +115,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void SetJob_HandlesNullJobGracefully()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert - should not throw
             Assert.DoesNotThrow(() => _brokerage.SetJob(null));
@@ -126,7 +125,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void SetJob_ValidatesConfigurationAfterUpdate()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
             var job = new LiveNodePacket
             {
                 UserId = 123,
@@ -147,7 +146,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         {
             // Arrange
             Config.Set("project-x-api-key", "");
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => _brokerage.Connect());
@@ -158,7 +157,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         {
             // Arrange
             Config.Set("project-x-api-secret", "");
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => _brokerage.Connect());
@@ -169,7 +168,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         {
             // Arrange
             Config.Set("project-x-environment", "invalid");
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => _brokerage.Connect());
@@ -179,7 +178,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void Disconnect_CanBeCalledWhenNotConnected()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert - should not throw
             Assert.DoesNotThrow(() => _brokerage.Disconnect());
@@ -190,7 +189,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void Disconnect_IsIdempotent()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert - multiple disconnects should not throw
             Assert.DoesNotThrow(() => _brokerage.Disconnect());
@@ -202,11 +201,11 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void Dispose_DisconnectsAndCleansUpResources()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act - should not throw
             Assert.DoesNotThrow(() => _brokerage.Dispose());
-            
+
             // Assert
             Assert.IsFalse(_brokerage.IsConnected);
         }
@@ -215,7 +214,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         public void Dispose_CanBeCalledMultipleTimes()
         {
             // Arrange
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert - multiple disposes should not throw
             Assert.DoesNotThrow(() => _brokerage.Dispose());
@@ -229,11 +228,11 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
             Config.Reset();
             Environment.SetEnvironmentVariable("PROJECT_X_API_KEY", "env-api-key");
             Environment.SetEnvironmentVariable("PROJECT_X_API_SECRET", "env-api-secret");
-            
+
             try
             {
                 // Act
-                _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+                _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
                 // Assert - should not throw on construction
                 Assert.IsNotNull(_brokerage);
@@ -249,21 +248,29 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         [Test]
         public void Configuration_DefaultReconnectAttempts()
         {
-            // Arrange
-            Config.Set("project-x-reconnect-attempts", "");
-            
+            // Arrange - Reset and don't set the key to test default value
+            Config.Reset();
+            Config.Set("project-x-api-key", "test-api-key");
+            Config.Set("project-x-api-secret", "test-api-secret");
+            Config.Set("project-x-environment", "sandbox");
+            // Note: project-x-reconnect-attempts is not set, so default should be used
+
             // Act & Assert - should use default value without throwing
-            Assert.DoesNotThrow(() => _brokerage = new ProjectXBrokerage(_mockAggregator.Object));
+            Assert.DoesNotThrow(() => _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object));
         }
 
         [Test]
         public void Configuration_DefaultReconnectDelay()
         {
-            // Arrange
-            Config.Set("project-x-reconnect-delay", "");
-            
+            // Arrange - Reset and don't set the key to test default value
+            Config.Reset();
+            Config.Set("project-x-api-key", "test-api-key");
+            Config.Set("project-x-api-secret", "test-api-secret");
+            Config.Set("project-x-environment", "sandbox");
+            // Note: project-x-reconnect-delay is not set, so default should be used
+
             // Act & Assert - should use default value without throwing
-            Assert.DoesNotThrow(() => _brokerage = new ProjectXBrokerage(_mockAggregator.Object));
+            Assert.DoesNotThrow(() => _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object));
         }
 
         [Test]
@@ -271,7 +278,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         {
             // Arrange
             Config.Set("project-x-reconnect-attempts", "0");
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => _brokerage.Connect());
@@ -282,7 +289,7 @@ namespace QuantConnect.Brokerages.Tests.ProjectXBrokerage
         {
             // Arrange
             Config.Set("project-x-reconnect-delay", "50"); // Below minimum of 100ms
-            _brokerage = new ProjectXBrokerage(_mockAggregator.Object);
+            _brokerage = new Brokerages.ProjectXBrokerage.ProjectXBrokerage(_mockAggregator.Object);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => _brokerage.Connect());
