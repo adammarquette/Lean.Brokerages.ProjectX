@@ -20,38 +20,45 @@ Create a configuration file (e.g., `config.json`):
 ```json
 {
   "brokerage": "ProjectXBrokerage",
-  "brokerage-project-x-api-key": "your-api-key",
-  "brokerage-project-x-api-secret": "your-api-secret",
-  "brokerage-project-x-environment": "sandbox",
+  "project-x-api-key": "your-api-key",
+  "project-x-api-secret": "your-api-secret",
+  "project-x-environment": "sandbox",
+  "project-x-reconnect-attempts": 5,
+  "project-x-reconnect-delay": 1000,
+  "project-x-heartbeat-interval": 30000,
   "data-queue-handler": "ProjectXBrokerage"
 }
 ```
 
 ### Method 2: Environment Variables
 
-Set configuration via environment variables with the `QC_` prefix:
+Set configuration via environment variables (no `QC_` prefix needed):
 
 ```bash
 # Linux/macOS
-export QC_BROKERAGE="ProjectXBrokerage"
-export QC_BROKERAGE_PROJECT_X_API_KEY="your-api-key"
-export QC_BROKERAGE_PROJECT_X_API_SECRET="your-api-secret"
-export QC_BROKERAGE_PROJECT_X_ENVIRONMENT="sandbox"
+export PROJECT_X_API_KEY="your-api-key"
+export PROJECT_X_API_SECRET="your-api-secret"
+export project-x-environment="sandbox"
+export project-x-reconnect-attempts="5"
+export project-x-reconnect-delay="1000"
+export project-x-heartbeat-interval="30000"
 
 # Windows PowerShell
-$env:QC_BROKERAGE = "ProjectXBrokerage"
-$env:QC_BROKERAGE_PROJECT_X_API_KEY = "your-api-key"
-$env:QC_BROKERAGE_PROJECT_X_API_SECRET = "your-api-secret"
-$env:QC_BROKERAGE_PROJECT_X_ENVIRONMENT = "sandbox"
+$env:PROJECT_X_API_KEY = "your-api-key"
+$env:PROJECT_X_API_SECRET = "your-api-secret"
+$env:project-x-environment = "sandbox"
 ```
+
+**Note:** API credentials can use uppercase environment variable names (`PROJECT_X_API_KEY`, `PROJECT_X_API_SECRET`) while other settings use the exact config key names.
 
 ### Method 3: Docker Environment
 
 ```dockerfile
-ENV QC_BROKERAGE="ProjectXBrokerage"
-ENV QC_BROKERAGE_PROJECT_X_API_KEY="your-api-key"
-ENV QC_BROKERAGE_PROJECT_X_API_SECRET="your-api-secret"
-ENV QC_BROKERAGE_PROJECT_X_ENVIRONMENT="production"
+ENV PROJECT_X_API_KEY="your-api-key"
+ENV PROJECT_X_API_SECRET="your-api-secret"
+ENV project-x-environment="production"
+ENV project-x-reconnect-attempts="5"
+ENV project-x-reconnect-delay="1000"
 ```
 
 ## Configuration Reference
@@ -61,14 +68,16 @@ ENV QC_BROKERAGE_PROJECT_X_ENVIRONMENT="production"
 | Key | Description | Example |
 |-----|-------------|---------|
 | `brokerage` | Brokerage identifier | `"ProjectXBrokerage"` |
-| `brokerage-project-x-api-key` | Your ProjectX API key | `"abc123..."` |
-| `brokerage-project-x-api-secret` | Your ProjectX API secret | `"xyz789..."` |
+| `project-x-api-key` | Your ProjectX API key | `"abc123..."` |
+| `project-x-api-secret` | Your ProjectX API secret | `"xyz789..."` |
+
+**Note:** API credentials can also be set via environment variables `PROJECT_X_API_KEY` and `PROJECT_X_API_SECRET`.
 
 ### Environment Settings
 
 | Key | Options | Default | Description |
 |-----|---------|---------|-------------|
-| `brokerage-project-x-environment` | `"sandbox"`, `"production"` | `"production"` | Trading environment |
+| `project-x-environment` | `"sandbox"`, `"production"` | `"production"` | Trading environment |
 
 **Sandbox Environment:**
 - Use for development and testing
@@ -112,15 +121,32 @@ ENV QC_BROKERAGE_PROJECT_X_ENVIRONMENT="production"
 
 | Key | Type | Default | Range | Description |
 |-----|------|---------|-------|-------------|
-| `brokerage-project-x-reconnect-attempts` | integer | `5` | 1-20 | Reconnection attempts |
-| `brokerage-project-x-reconnect-delay` | integer | `1000` | 100-60000 | Initial delay (ms) |
+| `project-x-reconnect-attempts` | integer | `5` | 1-20 | Max reconnection attempts |
+| `project-x-reconnect-delay` | integer | `1000` | 100-60000 | Initial retry delay (ms) |
+| `project-x-heartbeat-interval` | integer | `30000` | 1000-300000 | Health check interval (ms) |
 | `brokerage-project-x-request-timeout` | integer | `30000` | 1000-300000 | HTTP timeout (ms) |
 | `brokerage-project-x-websocket-timeout` | integer | `5000` | 1000-60000 | WebSocket timeout (ms) |
 
 **Reconnection Strategy:**
-- Exponential backoff: delay doubles after each attempt
+- Exponential backoff: delay doubles after each failed attempt (max 60s)
 - WebSocket automatically reconnects on disconnect
 - Connection state events emitted for monitoring
+- After max attempts exceeded, connection fails with error
+
+**Example Configuration:**
+```json
+{
+  "project-x-reconnect-attempts": 5,
+  "project-x-reconnect-delay": 1000,
+  "project-x-heartbeat-interval": 30000
+}
+```
+
+**Heartbeat Monitoring:**
+- Periodic health checks verify connection status
+- Detects stale connections automatically
+- Triggers reconnection on health check failures
+- Configurable interval balances reliability vs overhead
 
 ### Logging Settings
 

@@ -20,6 +20,8 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Logging;
 using System.Collections.Generic;
+using QuantConnect.Util;
+using QuantConnect.Data;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
 {
@@ -63,8 +65,22 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>A new brokerage instance</returns>
         public override IBrokerage CreateBrokerage(LiveNodePacket job, IAlgorithm algorithm)
         {
-            Log.Trace($"ProjectXBrokerageFactory.CreateBrokerage(): Creating brokerage for user {job?.UserId}");
-            throw new NotImplementedException("ProjectXBrokerageFactory.CreateBrokerage(): Implementation pending Phase 2");
+            if (job == null)
+            {
+                throw new ArgumentNullException(nameof(job), "ProjectXBrokerageFactory.CreateBrokerage(): Job packet cannot be null");
+            }
+
+            Log.Trace($"ProjectXBrokerageFactory.CreateBrokerage(): Creating brokerage for user {job.UserId}");
+
+            var aggregator = Composer.Instance.GetPart<IDataAggregator>();
+            var brokerage = new ProjectXBrokerage(aggregator);
+
+            // Configure the brokerage with job-specific settings
+            brokerage.SetJob(job);
+
+            Log.Trace("ProjectXBrokerageFactory.CreateBrokerage(): Brokerage instance created successfully");
+
+            return brokerage;
         }
 
         /// <summary>
