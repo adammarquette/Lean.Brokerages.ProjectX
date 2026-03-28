@@ -270,6 +270,12 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             try
             {
+                // Update connection state first to stop heartbeat loop
+                lock (_connectionLock)
+                {
+                    _isConnected = false;
+                }
+
                 // Cancel any ongoing operations
                 _connectionCts?.Cancel();
 
@@ -277,19 +283,24 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 if (_heartbeatTask != null && !_heartbeatTask.IsCompleted)
                 {
                     Log.Debug("ProjectXBrokerage.Disconnect(): Stopping heartbeat monitoring");
-                    _heartbeatTask.Wait(TimeSpan.FromSeconds(5));
+                    try
+                    {
+                        _heartbeatTask.Wait(TimeSpan.FromSeconds(5));
+                    }
+                    catch (AggregateException ex)
+                    {
+                        // Ignore cancellation exceptions from heartbeat task
+                        if (!(ex.InnerException is OperationCanceledException))
+                        {
+                            Log.Error(ex, "ProjectXBrokerage.Disconnect(): Error waiting for heartbeat to stop");
+                        }
+                    }
                 }
 
                 // TODO: Close WebSocket connections
                 // TODO: Dispose MarqSpec.Client.ProjectX resources
                 // Example:
                 // _apiClient?.Dispose();
-
-                // Update connection state
-                lock (_connectionLock)
-                {
-                    _isConnected = false;
-                }
 
                 // Reset cancellation token source
                 _connectionCts?.Dispose();
@@ -301,6 +312,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             catch (Exception ex)
             {
                 Log.Error(ex, "ProjectXBrokerage.Disconnect(): Error during disconnection");
+
+                // Ensure we're marked as disconnected even if there's an error
+                lock (_connectionLock)
+                {
+                    _isConnected = false;
+                }
+
                 // Don't throw - disconnection should always succeed
             }
         }
