@@ -6,7 +6,7 @@
 
 ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin focused on futures trading (Phase 1). This repository implements the scaffolding and roadmap for connecting LEAN to the ProjectX trading platform.
 
-**Status**: Phase 1 - Foundation Complete  
+**Status**: Phase 2.2 - Order Management Implementation In Progress  
 **Last updated**: March 25, 2026  
 **Project lead**: Marquette Speculations  
 **Repository**: https://github.com/adammarquette/Lean.Brokerages.ProjectX
@@ -93,6 +93,56 @@ export QC_BROKERAGE_PROJECT_X_ENVIRONMENT="sandbox"
 - `config-schema.json` - JSON Schema for validation
 - `config.template.json` - Template with all options documented
 - See `PRD.md` for detailed configuration examples
+
+Features Implemented
+--------------------
+
+### Phase 2.2: Order Management (In Progress)
+
+The brokerage now includes core order management functionality:
+
+#### Order Execution
+- **PlaceOrder()**: Submits new orders to ProjectX with comprehensive validation
+  - Supports Market, Limit, Stop Market, and Stop Limit orders
+  - Duplicate submission detection (5-second window)
+  - Automatic order ID mapping (LEAN ↔ ProjectX)
+  - OrderEvent firing for status changes
+
+- **CancelOrder()**: Cancels pending orders
+  - Connection state validation
+  - Order ID lookup from internal mapping
+  - CancelPending event firing
+
+- **UpdateOrder()**: Currently returns false (modifications not supported)
+  - Use cancel-and-replace pattern instead
+
+- **GetOpenOrders()**: Retrieves all open orders
+  - Connection validation
+  - Ready for API integration
+
+#### Order ID Mapping
+- Bidirectional thread-safe mapping between LEAN and ProjectX order IDs
+- Uses `ConcurrentDictionary` for thread-safe concurrent access
+- Automatic cleanup of completed orders
+
+#### Order Validation
+- Connection state check
+- Symbol validation (no universe/canonical symbols)
+- Quantity validation (non-zero required)
+- Order type support verification
+- Price validation for limit/stop orders
+- Detailed error messages
+
+#### Supported Order Types
+- ✅ Market Order
+- ✅ Limit Order  
+- ✅ Stop Market Order
+- ✅ Stop Limit Order
+- ❌ Market On Open/Close (not supported)
+- ❌ Option Exercise (not supported)
+- ❌ Trailing Stop (not supported)
+
+**Note**: MarqSpec.Client.ProjectX integration pending. Current implementation includes TODO markers for API integration points.
 
 Development guidance
 --------------------
