@@ -14,12 +14,14 @@
 */
 
 using System;
+using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
+using QuantConnect.Logging;
 using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
@@ -50,6 +52,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="aggregator">consolidate ticks</param>
         public ProjectXBrokerage(IDataAggregator aggregator) : base("ProjectXBrokerage")
         {
+            Log.Trace("ProjectXBrokerage(): Initializing ProjectX brokerage instance");
+
             _aggregator = aggregator;
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
@@ -63,6 +67,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             // Rate gate limiter useful for API/WS calls
             // _connectionRateLimiter = new RateGate();
+
+            Log.Trace("ProjectXBrokerage(): Initialization complete");
         }
 
         #region IDataQueueHandler
@@ -77,8 +83,11 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         {
             if (!CanSubscribe(dataConfig.Symbol))
             {
+                Log.Trace($"ProjectXBrokerage.Subscribe(): Subscription not allowed for symbol: {dataConfig.Symbol}");
                 return null;
             }
+
+            Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {dataConfig.Symbol}, Resolution: {dataConfig.Resolution}");
 
             var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
             _subscriptionManager.Subscribe(dataConfig);
@@ -92,6 +101,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="dataConfig">Subscription config to be removed</param>
         public void Unsubscribe(SubscriptionDataConfig dataConfig)
         {
+            Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {dataConfig.Symbol}");
+
             _subscriptionManager.Unsubscribe(dataConfig);
             _aggregator.Remove(dataConfig);
         }
@@ -102,7 +113,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="job">Job we're subscribing for</param>
         public void SetJob(LiveNodePacket job)
         {
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerage.SetJob(): Job UserId: {job?.UserId}, AlgorithmId: {job?.AlgorithmId}");
+            throw new NotImplementedException("ProjectXBrokerage.SetJob(): Implementation pending Phase 2");
         }
 
         #endregion
@@ -116,7 +128,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>The open orders returned from IB</returns>
         public override List<Order> GetOpenOrders()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.GetOpenOrders(): Retrieving open orders");
+            throw new NotImplementedException("ProjectXBrokerage.GetOpenOrders(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -125,7 +138,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>The current holdings from the account</returns>
         public override List<Holding> GetAccountHoldings()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.GetAccountHoldings(): Retrieving account holdings");
+            throw new NotImplementedException("ProjectXBrokerage.GetAccountHoldings(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -134,7 +148,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>The current cash balance for each currency available for trading</returns>
         public override List<CashAmount> GetCashBalance()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.GetCashBalance(): Retrieving cash balance");
+            throw new NotImplementedException("ProjectXBrokerage.GetCashBalance(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -144,7 +159,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if the request for a new order has been placed, false otherwise</returns>
         public override bool PlaceOrder(Order order)
         {
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerage.PlaceOrder(): Symbol: {order.Symbol}, Quantity: {order.Quantity}, Type: {order.Type}");
+            throw new NotImplementedException("ProjectXBrokerage.PlaceOrder(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -154,7 +170,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
         public override bool UpdateOrder(Order order)
         {
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerage.UpdateOrder(): OrderId: {order.Id}, Symbol: {order.Symbol}, Quantity: {order.Quantity}");
+            throw new NotImplementedException("ProjectXBrokerage.UpdateOrder(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -164,7 +181,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
         public override bool CancelOrder(Order order)
         {
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerage.CancelOrder(): OrderId: {order.Id}, Symbol: {order.Symbol}");
+            throw new NotImplementedException("ProjectXBrokerage.CancelOrder(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -172,7 +190,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         public override void Connect()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.Connect(): Connecting to ProjectX API");
+            throw new NotImplementedException("ProjectXBrokerage.Connect(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -180,7 +199,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         public override void Disconnect()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.Disconnect(): Disconnecting from ProjectX API");
+            throw new NotImplementedException("ProjectXBrokerage.Disconnect(): Implementation pending Phase 2");
         }
 
         #endregion
@@ -196,7 +216,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>Enumerable of Symbols, that are associated with the provided Symbol</returns>
         public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
         {
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerage.LookupSymbols(): Looking up symbols for {symbol}, IncludeExpired: {includeExpired}");
+            throw new NotImplementedException("ProjectXBrokerage.LookupSymbols(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -207,7 +228,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if selection can take place</returns>
         public bool CanPerformSelection()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.CanPerformSelection(): Checking if selection can be performed");
+            throw new NotImplementedException("ProjectXBrokerage.CanPerformSelection(): Implementation pending Phase 2");
         }
 
         #endregion
@@ -228,7 +250,9 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="symbols">The symbols to be added keyed by SecurityType</param>
         private bool Subscribe(IEnumerable<Symbol> symbols)
         {
-            throw new NotImplementedException();
+            var symbolList = symbols?.ToList() ?? new List<Symbol>();
+            Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {symbolList.Count} symbols");
+            throw new NotImplementedException("ProjectXBrokerage.Subscribe(): Implementation pending Phase 5");
         }
 
         /// <summary>
@@ -237,7 +261,9 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="symbols">The symbols to be removed keyed by SecurityType</param>
         private bool Unsubscribe(IEnumerable<Symbol> symbols)
         {
-            throw new NotImplementedException();
+            var symbolList = symbols?.ToList() ?? new List<Symbol>();
+            Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {symbolList.Count} symbols");
+            throw new NotImplementedException("ProjectXBrokerage.Unsubscribe(): Implementation pending Phase 5");
         }
 
         /// <summary>
@@ -250,10 +276,12 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         {
             if (!CanSubscribe(request.Symbol))
             {
+                Log.Trace($"ProjectXBrokerage.GetHistory(): Cannot subscribe to {request.Symbol}");
                 return null; // Should consistently return null instead of an empty enumerable
             }
 
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerage.GetHistory(): Requesting history for {request.Symbol}, Start: {request.StartTimeUtc}, End: {request.EndTimeUtc}, Resolution: {request.Resolution}");
+            throw new NotImplementedException("ProjectXBrokerage.GetHistory(): Implementation pending Phase 6");
         }
     }
 }
