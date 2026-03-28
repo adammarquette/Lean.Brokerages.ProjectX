@@ -23,8 +23,24 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantConnect.ProjectXBroker
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentation", "{BB8AE49A-7566-4C2B-B060-2B2C435F50F5}"
 	ProjectSection(SolutionItems) = preProject
+		CICD.md = CICD.md
+		CONFIGURATION.md = CONFIGURATION.md
+		DIAGRAMS.md = DIAGRAMS.md
 		PRD.md = PRD.md
 		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".github", ".github", "{BC11A1C6-DB0F-4F6A-8392-C2FD59944CA1}"
+	ProjectSection(SolutionItems) = preProject
+		.github\copilot-instructions.md = .github\copilot-instructions.md
+		.github\issue_template.md = .github\issue_template.md
+		.github\pull_request_template.md = .github\pull_request_template.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflow", "workflow", "{40EDE613-521A-476D-9145-9D77F3EBE2E4}"
+	ProjectSection(SolutionItems) = preProject
+		.github\workflows\build.yml = .github\workflows\build.yml
+		.github\workflows\gh-actions.yml = .github\workflows\gh-actions.yml
 	EndProjectSection
 EndProject
 Global
@@ -72,6 +88,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{40EDE613-521A-476D-9145-9D77F3EBE2E4} = {BC11A1C6-DB0F-4F6A-8392-C2FD59944CA1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {61010DD6-6D0C-4324-8137-1EDF35F16864}
