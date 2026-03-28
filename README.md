@@ -144,6 +144,64 @@ The brokerage now includes core order management functionality:
 
 **Note**: MarqSpec.Client.ProjectX integration pending. Current implementation includes TODO markers for API integration points.
 
+### Phase 2.3: Account Synchronization ✅ Complete
+
+The brokerage now includes comprehensive account synchronization functionality:
+
+#### Account Data Retrieval
+- **GetAccountHoldings()**: Retrieves current positions from ProjectX
+  - Connection state validation
+  - Error handling and logging
+  - Returns `List<Holding>` with all required properties
+  - Ready for ProjectX position conversion
+  - Empty list returned when not connected
+
+- **GetCashBalance()**: Retrieves account cash balance
+  - Connection state validation
+  - Multi-currency support structure in place
+  - Returns `List<CashAmount>` for each currency
+  - Defaults to USD when currency not specified
+  - Empty list returned when not connected
+
+#### Position Reconciliation
+- **ReconcilePositions()**: Synchronizes LEAN state with ProjectX on connect
+  - Queries holdings and balances from ProjectX
+  - Compares with cached LEAN state
+  - Detects discrepancies (missing, extra, quantity mismatches)
+  - Logs warnings for inconsistencies
+  - Updates LEAN to match ProjectX (ProjectX as source of truth)
+  - Fires AccountChanged events when needed
+
+#### Real-time Account Updates
+- **SubscribeToAccountUpdates()**: Subscribes to WebSocket account events
+  - Automatic subscription on connection
+  - Resubscription after reconnection
+  - Error handling and logging
+
+- **HandleAccountUpdate()**: Processes account update messages
+  - Balance change handling
+  - Position change handling
+  - Realized P&L tracking
+  - Fires AccountChanged events
+  - Updates internal state cache
+
+#### Integration Points
+- Position reconciliation called after successful connection
+- Account updates subscribed during connection establishment
+- Resubscription and reconciliation after reconnection
+- All methods include comprehensive logging at appropriate levels
+
+#### Test Coverage
+- 29 unit tests created (5 executable, 24 awaiting MarqSpec.Client.ProjectX)
+- Tests for GetAccountHoldings (empty, not connected, property mapping)
+- Tests for GetCashBalance (empty, not connected, multi-currency)
+- Tests for account update handling
+- Tests for position reconciliation scenarios
+- Integration tests for sandbox environment (when credentials available)
+- Performance tests for success metrics validation
+
+**Status**: Core structure complete. Awaiting MarqSpec.Client.ProjectX integration for full API functionality.
+
 Development guidance
 --------------------
 - Start from the factory and brokerage stubs provided. Follow LEAN brokerage examples (TradeStation, Bybit, Binance) for reference.
