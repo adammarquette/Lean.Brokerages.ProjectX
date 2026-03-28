@@ -14,12 +14,18 @@
 */
 
 using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Diagnostics;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
+using QuantConnect.Logging;
+using QuantConnect.Configuration;
 using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
@@ -30,10 +36,40 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         private readonly IDataAggregator _aggregator;
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
+        // Connection state
+        private volatile bool _isConnected;
+        private readonly object _connectionLock = new object();
+        private readonly SemaphoreSlim _connectionSemaphore = new SemaphoreSlim(1, 1);
+
+        // Configuration
+        private string _apiKey;
+        private string _apiSecret;
+        private string _environment;
+        private int _maxReconnectAttempts;
+        private int _reconnectDelayMilliseconds;
+        private int _connectionTimeoutMilliseconds;
+
+        // Retry and reconnection
+        private CancellationTokenSource _connectionCts;
+        private Task _heartbeatTask;
+        private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(30);
+
+        // TODO: Replace with actual MarqSpec.Client.ProjectX instance when available
+        // private readonly IProjectXClient _apiClient;
+
         /// <summary>
         /// Returns true if we're currently connected to the broker
         /// </summary>
-        public override bool IsConnected { get; }
+        public override bool IsConnected
+        {
+            get
+            {
+                lock (_connectionLock)
+                {
+                    return _isConnected;
+                }
+            }
+        }
 
         /// <summary>
         /// Parameterless constructor for brokerage
@@ -50,10 +86,19 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="aggregator">consolidate ticks</param>
         public ProjectXBrokerage(IDataAggregator aggregator) : base("ProjectXBrokerage")
         {
+            Log.Trace("ProjectXBrokerage(): Initializing ProjectX brokerage instance");
+
             _aggregator = aggregator;
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
             _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
+
+            // Load configuration
+            LoadConfiguration();
+
+            // Initialize connection state
+            _isConnected = false;
+            _connectionCts = new CancellationTokenSource();
 
             // Useful for some brokerages:
 
@@ -63,6 +108,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             // Rate gate limiter useful for API/WS calls
             // _connectionRateLimiter = new RateGate();
+
+            Log.Trace("ProjectXBrokerage(): Initialization complete");
         }
 
         #region IDataQueueHandler
@@ -172,7 +219,29 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         public override void Connect()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.Connect(): Connecting to ProjectX API");
+
+            if (IsConnected)
+            {
+                Log.Trace("ProjectXBrokerage.Connect(): Already connected");
+                return;
+            }
+
+            // Validate configuration
+            ValidateConfiguration();
+
+            // Attempt connection with retry logic
+            var connected = ConnectWithRetry();
+
+            if (!connected)
+            {
+                var message = $"ProjectXBrokerage.Connect(): Failed to connect after {_maxReconnectAttempts} attempts";
+                Log.Error(message);
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CONNECTION_FAILED", message));
+                throw new Exception(message);
+            }
+
+            Log.Trace("ProjectXBrokerage.Connect(): Successfully connected to ProjectX");
         }
 
         /// <summary>
@@ -180,7 +249,49 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         public override void Disconnect()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerage.Disconnect(): Disconnecting from ProjectX API");
+
+            if (!IsConnected)
+            {
+                Log.Debug("ProjectXBrokerage.Disconnect(): Already disconnected");
+                return;
+            }
+
+            try
+            {
+                // Cancel any ongoing operations
+                _connectionCts?.Cancel();
+
+                // Stop heartbeat monitoring
+                if (_heartbeatTask != null && !_heartbeatTask.IsCompleted)
+                {
+                    Log.Debug("ProjectXBrokerage.Disconnect(): Stopping heartbeat monitoring");
+                    _heartbeatTask.Wait(TimeSpan.FromSeconds(5));
+                }
+
+                // TODO: Close WebSocket connections
+                // TODO: Dispose MarqSpec.Client.ProjectX resources
+                // Example:
+                // _apiClient?.Dispose();
+
+                // Update connection state
+                lock (_connectionLock)
+                {
+                    _isConnected = false;
+                }
+
+                // Reset cancellation token source
+                _connectionCts?.Dispose();
+                _connectionCts = new CancellationTokenSource();
+
+                Log.Trace("ProjectXBrokerage.Disconnect(): Successfully disconnected from ProjectX");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Information, "DISCONNECTED", "Disconnected from ProjectX"));
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.Disconnect(): Error during disconnection");
+                // Don't throw - disconnection should always succeed
+            }
         }
 
         #endregion
@@ -255,5 +366,268 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             throw new NotImplementedException();
         }
+
+        #region Connection Management Helper Methods
+
+        /// <summary>
+        /// Loads configuration from LEAN config or environment variables
+        /// </summary>
+        private void LoadConfiguration()
+        {
+            Log.Trace("ProjectXBrokerage.LoadConfiguration(): Loading configuration");
+
+            // Load API credentials
+            _apiKey = Config.Get("brokerage-project-x-api-key", string.Empty);
+            _apiSecret = Config.Get("brokerage-project-x-api-secret", string.Empty);
+
+            // Load environment setting
+            _environment = Config.Get("brokerage-project-x-environment", "production");
+
+            // Load retry/reconnect settings
+            _maxReconnectAttempts = Config.GetInt("brokerage-project-x-reconnect-attempts", 5);
+            _reconnectDelayMilliseconds = Config.GetInt("brokerage-project-x-reconnect-delay", 1000);
+            _connectionTimeoutMilliseconds = Config.GetInt("brokerage-project-x-connection-timeout", 30000);
+
+            Log.Debug($"ProjectXBrokerage.LoadConfiguration(): Environment={_environment}, MaxRetries={_maxReconnectAttempts}");
+        }
+
+        /// <summary>
+        /// Validates that all required configuration is present
+        /// </summary>
+        private void ValidateConfiguration()
+        {
+            Log.Debug("ProjectXBrokerage.ValidateConfiguration(): Validating configuration");
+
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                throw new ArgumentException("ProjectX API key is required. Set 'brokerage-project-x-api-key' in configuration.");
+            }
+
+            if (string.IsNullOrWhiteSpace(_apiSecret))
+            {
+                throw new ArgumentException("ProjectX API secret is required. Set 'brokerage-project-x-api-secret' in configuration.");
+            }
+
+            if (_environment != "sandbox" && _environment != "production")
+            {
+                throw new ArgumentException($"Invalid environment '{_environment}'. Must be 'sandbox' or 'production'.");
+            }
+
+            if (_maxReconnectAttempts < 1 || _maxReconnectAttempts > 20)
+            {
+                throw new ArgumentException($"Invalid reconnect attempts '{_maxReconnectAttempts}'. Must be between 1 and 20.");
+            }
+
+            Log.Debug("ProjectXBrokerage.ValidateConfiguration(): Configuration is valid");
+        }
+
+        /// <summary>
+        /// Attempts to connect with retry logic and exponential backoff
+        /// </summary>
+        /// <returns>True if connected successfully, false otherwise</returns>
+        private bool ConnectWithRetry()
+        {
+            var attempt = 0;
+            var delay = _reconnectDelayMilliseconds;
+            var maxDelay = 60000; // 60 seconds max delay
+
+            while (attempt < _maxReconnectAttempts)
+            {
+                attempt++;
+                Log.Debug($"ProjectXBrokerage.ConnectWithRetry(): Attempt {attempt}/{_maxReconnectAttempts}");
+
+                try
+                {
+                    // Attempt the actual connection
+                    var success = AttemptConnection();
+
+                    if (success)
+                    {
+                        Log.Trace($"ProjectXBrokerage.ConnectWithRetry(): Successfully connected on attempt {attempt}");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, $"ProjectXBrokerage.ConnectWithRetry(): Connection attempt {attempt} failed");
+
+                    if (attempt < _maxReconnectAttempts)
+                    {
+                        // Fire message event for retry
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "CONNECTION_RETRY", 
+                            $"Connection failed. Retrying in {delay}ms (attempt {attempt}/{_maxReconnectAttempts})"));
+
+                        // Wait before retry with exponential backoff
+                        Thread.Sleep(delay);
+
+                        // Exponential backoff: double the delay, but cap at maxDelay
+                        delay = Math.Min(delay * 2, maxDelay);
+                    }
+                }
+            }
+
+            Log.Error($"ProjectXBrokerage.ConnectWithRetry(): Failed to connect after {_maxReconnectAttempts} attempts");
+            return false;
+        }
+
+        /// <summary>
+        /// Performs a single connection attempt
+        /// </summary>
+        /// <returns>True if connected successfully, false otherwise</returns>
+        private bool AttemptConnection()
+        {
+            Log.Debug("ProjectXBrokerage.AttemptConnection(): Attempting connection");
+
+            try
+            {
+                // TODO: Replace with actual MarqSpec.Client.ProjectX connection code
+                // Example:
+                // _apiClient = new ProjectXClient(_apiKey, _apiSecret, _environment);
+                // await _apiClient.ConnectAsync();
+                // await _apiClient.AuthenticateAsync();
+
+                // TODO: Initialize WebSocket connections
+                // Example:
+                // _webSocketClient = _apiClient.CreateWebSocketClient();
+                // await _webSocketClient.ConnectAsync();
+
+                // TODO: Subscribe to account updates
+                // await _webSocketClient.SubscribeToAccountUpdatesAsync();
+
+                // For now, simulate successful connection
+                // This will be replaced when MarqSpec.Client.ProjectX is integrated
+                lock (_connectionLock)
+                {
+                    _isConnected = true;
+                }
+
+                // Start heartbeat monitoring
+                StartHeartbeat();
+
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Information, "CONNECTED", "Connected to ProjectX"));
+
+                Log.Trace("ProjectXBrokerage.AttemptConnection(): Connection successful");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.AttemptConnection(): Connection failed");
+
+                lock (_connectionLock)
+                {
+                    _isConnected = false;
+                }
+
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Starts the heartbeat monitoring task
+        /// </summary>
+        private void StartHeartbeat()
+        {
+            if (_heartbeatTask != null && !_heartbeatTask.IsCompleted)
+            {
+                Log.Debug("ProjectXBrokerage.StartHeartbeat(): Heartbeat already running");
+                return;
+            }
+
+            Log.Debug("ProjectXBrokerage.StartHeartbeat(): Starting heartbeat monitoring");
+
+            _heartbeatTask = Task.Run(async () =>
+            {
+                while (!_connectionCts.Token.IsCancellationRequested && IsConnected)
+                {
+                    try
+                    {
+                        await Task.Delay(_heartbeatInterval, _connectionCts.Token);
+
+                        if (_connectionCts.Token.IsCancellationRequested)
+                        {
+                            break;
+                        }
+
+                        // TODO: Implement actual heartbeat/ping
+                        // Example:
+                        // var pingResult = await _apiClient.PingAsync();
+                        // if (!pingResult.Success)
+                        // {
+                        //     Log.Warning("ProjectXBrokerage.Heartbeat(): Ping failed, triggering reconnection");
+                        //     await ReconnectAsync();
+                        // }
+
+                        Log.Trace("ProjectXBrokerage.Heartbeat(): Heartbeat successful");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Expected when disconnecting
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "ProjectXBrokerage.Heartbeat(): Error during heartbeat");
+
+                        // Attempt reconnection on heartbeat failure
+                        if (IsConnected)
+                        {
+                            Log.Error("ProjectXBrokerage.Heartbeat(): Triggering reconnection due to heartbeat failure");
+                            _ = Task.Run(() => HandleReconnection());
+                        }
+
+                        break;
+                    }
+                }
+
+                Log.Debug("ProjectXBrokerage.StartHeartbeat(): Heartbeat monitoring stopped");
+            }, _connectionCts.Token);
+        }
+
+        /// <summary>
+        /// Handles reconnection logic
+        /// </summary>
+        private void HandleReconnection()
+        {
+            if (!_connectionSemaphore.Wait(0))
+            {
+                Log.Debug("ProjectXBrokerage.HandleReconnection(): Reconnection already in progress");
+                return;
+            }
+
+            try
+            {
+                Log.Error("ProjectXBrokerage.HandleReconnection(): Connection lost, attempting to reconnect");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "RECONNECTING", "Connection lost, attempting to reconnect"));
+
+                // Mark as disconnected
+                lock (_connectionLock)
+                {
+                    _isConnected = false;
+                }
+
+                // Attempt reconnection
+                var reconnected = ConnectWithRetry();
+
+                if (reconnected)
+                {
+                    Log.Trace("ProjectXBrokerage.HandleReconnection(): Reconnection successful");
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Information, "RECONNECTED", "Successfully reconnected to ProjectX"));
+
+                    // TODO: Resubscribe to data feeds
+                    // TODO: Resync account state
+                }
+                else
+                {
+                    Log.Error("ProjectXBrokerage.HandleReconnection(): Reconnection failed");
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "RECONNECT_FAILED", "Failed to reconnect to ProjectX"));
+                }
+            }
+            finally
+            {
+                _connectionSemaphore.Release();
+            }
+        }
+
+        #endregion
     }
 }
