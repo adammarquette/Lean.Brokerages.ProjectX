@@ -222,7 +222,56 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override List<Holding> GetAccountHoldings()
         {
             Log.Trace("ProjectXBrokerage.GetAccountHoldings(): Retrieving account holdings");
-            throw new NotImplementedException("ProjectXBrokerage.GetAccountHoldings(): Implementation pending Phase 2");
+
+            try
+            {
+                // Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetAccountHoldings(): Not connected to ProjectX");
+                    return new List<Holding>();
+                }
+
+                // TODO: Replace with actual API call when MarqSpec.Client.ProjectX is integrated
+                // Example:
+                // var projectXPositions = await _apiClient.GetPositionsAsync();
+
+                // For now, return empty list (Phase 2.3 stub - will be implemented with real API)
+                // When implementing:
+                // 1. Query positions from ProjectX API
+                // 2. Convert each ProjectX position to LEAN Holding using ConvertFromProjectXPosition()
+                // 3. Filter out zero-quantity positions if needed
+                // 4. Calculate market values and unrealized P&L
+
+                var holdings = new List<Holding>();
+
+                // Placeholder implementation - replace with:
+                // foreach (var projectXPosition in projectXPositions)
+                // {
+                //     try
+                //     {
+                //         var holding = ConvertFromProjectXPosition(projectXPosition);
+                //         if (holding != null)
+                //         {
+                //             holdings.Add(holding);
+                //         }
+                //     }
+                //     catch (Exception ex)
+                //     {
+                //         Log.Error(ex, $"ProjectXBrokerage.GetAccountHoldings(): Error converting position {projectXPosition.Symbol}");
+                //     }
+                // }
+
+                Log.Debug($"ProjectXBrokerage.GetAccountHoldings(): Retrieved {holdings.Count} holdings");
+                return holdings;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.GetAccountHoldings(): Error retrieving account holdings");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "GET_HOLDINGS_ERROR", 
+                    $"Error retrieving account holdings: {ex.Message}"));
+                return new List<Holding>();
+            }
         }
 
         /// <summary>
@@ -232,7 +281,61 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override List<CashAmount> GetCashBalance()
         {
             Log.Trace("ProjectXBrokerage.GetCashBalance(): Retrieving cash balance");
-            throw new NotImplementedException("ProjectXBrokerage.GetCashBalance(): Implementation pending Phase 2");
+
+            try
+            {
+                // Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetCashBalance(): Not connected to ProjectX");
+                    return new List<CashAmount>();
+                }
+
+                // TODO: Replace with actual API call when MarqSpec.Client.ProjectX is integrated
+                // Example:
+                // var accountBalance = await _apiClient.GetAccountBalanceAsync();
+
+                // For now, return empty list (Phase 2.3 stub - will be implemented with real API)
+                // When implementing:
+                // 1. Query account balance from ProjectX API
+                // 2. Extract available cash/buying power
+                // 3. Convert to LEAN CashAmount objects for each currency
+                // 4. Default to USD if currency not specified
+
+                var cashBalances = new List<CashAmount>();
+
+                // Placeholder implementation - replace with:
+                // // Handle single currency (most common case)
+                // if (accountBalance.Currency != null && accountBalance.AvailableCash.HasValue)
+                // {
+                //     var currency = string.IsNullOrEmpty(accountBalance.Currency) ? "USD" : accountBalance.Currency.ToUpperInvariant();
+                //     var amount = accountBalance.AvailableCash.Value;
+                //     cashBalances.Add(new CashAmount(amount, currency));
+                //     Log.Debug($"ProjectXBrokerage.GetCashBalance(): Balance = {amount} {currency}");
+                // }
+                //
+                // // Handle multiple currencies if supported
+                // if (accountBalance.Balances != null)
+                // {
+                //     foreach (var balance in accountBalance.Balances)
+                //     {
+                //         var currency = string.IsNullOrEmpty(balance.Currency) ? "USD" : balance.Currency.ToUpperInvariant();
+                //         var amount = balance.AvailableCash;
+                //         cashBalances.Add(new CashAmount(amount, currency));
+                //         Log.Debug($"ProjectXBrokerage.GetCashBalance(): Balance = {amount} {currency}");
+                //     }
+                // }
+
+                Log.Debug($"ProjectXBrokerage.GetCashBalance(): Retrieved {cashBalances.Count} cash balance(s)");
+                return cashBalances;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.GetCashBalance(): Error retrieving cash balance");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "GET_CASH_BALANCE_ERROR", 
+                    $"Error retrieving cash balance: {ex.Message}"));
+                return new List<CashAmount>();
+            }
         }
 
         /// <summary>
@@ -754,6 +857,12 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     _isConnected = true;
                 }
 
+                // Subscribe to account updates
+                SubscribeToAccountUpdates();
+
+                // Perform initial position reconciliation
+                ReconcilePositions();
+
                 // Start heartbeat monitoring
                 StartHeartbeat();
 
@@ -866,8 +975,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     Log.Trace("ProjectXBrokerage.HandleReconnection(): Reconnection successful");
                     OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Information, "RECONNECTED", "Successfully reconnected to ProjectX"));
 
+                    // Resubscribe to account updates
+                    SubscribeToAccountUpdates();
+
+                    // Resync account state
+                    ReconcilePositions();
+
                     // TODO: Resubscribe to data feeds
-                    // TODO: Resync account state
                 }
                 else
                 {
@@ -878,6 +992,187 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             finally
             {
                 _connectionSemaphore.Release();
+            }
+        }
+
+        #endregion
+
+        #region Account Synchronization Helper Methods
+
+        /// <summary>
+        /// Converts a ProjectX position to a LEAN Holding object
+        /// </summary>
+        /// <param name="projectXPosition">The ProjectX position object</param>
+        /// <returns>A LEAN Holding object, or null if conversion fails</returns>
+        private Holding ConvertFromProjectXPosition(object projectXPosition)
+        {
+            // TODO: Replace with actual MarqSpec.Client.ProjectX types when available
+            // Example implementation:
+            //
+            // var pxPosition = (ProjectXPosition)projectXPosition;
+            // 
+            // // Convert ProjectX symbol to LEAN Symbol
+            // // Note: This requires ProjectXSymbolMapper (Phase 3)
+            // // For now, create a placeholder Symbol
+            // var leanSymbol = Symbol.CreateFuture(pxPosition.Symbol, Market.USA, DateTime.UtcNow.AddMonths(3));
+            // // Real implementation:
+            // // var leanSymbol = _symbolMapper.GetLeanSymbol(pxPosition.Symbol, SecurityType.Future, Market.USA);
+            //
+            // // Create Holding with all required properties
+            // var holding = new Holding
+            // {
+            //     Symbol = leanSymbol,
+            //     Quantity = pxPosition.Quantity,
+            //     AveragePrice = pxPosition.AveragePrice,
+            //     MarketPrice = pxPosition.CurrentPrice,
+            //     CurrencySymbol = "$",
+            //     ConversionRate = 1m
+            // };
+            //
+            // // Calculate derived values
+            // var contractMultiplier = 1m; // Get from symbol properties when available
+            // holding.MarketValue = holding.Quantity * holding.MarketPrice * contractMultiplier;
+            // holding.UnrealizedPnL = (holding.MarketPrice - holding.AveragePrice) * holding.Quantity * contractMultiplier;
+            // 
+            // if (holding.AveragePrice != 0)
+            // {
+            //     holding.UnrealizedPnLPercent = (holding.UnrealizedPnL / (holding.AveragePrice * Math.Abs(holding.Quantity) * contractMultiplier)) * 100;
+            // }
+            //
+            // Log.Debug($"ProjectXBrokerage.ConvertFromProjectXPosition(): Converted {pxPosition.Symbol} - Qty: {holding.Quantity}, Avg: {holding.AveragePrice}, Mkt: {holding.MarketPrice}");
+            // return holding;
+
+            Log.Trace("ProjectXBrokerage.ConvertFromProjectXPosition(): MarqSpec.Client.ProjectX integration pending");
+            throw new NotImplementedException("ProjectXBrokerage.ConvertFromProjectXPosition(): MarqSpec.Client.ProjectX integration pending");
+        }
+
+        /// <summary>
+        /// Reconciles positions between LEAN and ProjectX on connection
+        /// </summary>
+        private void ReconcilePositions()
+        {
+            try
+            {
+                Log.Trace("ProjectXBrokerage.ReconcilePositions(): Starting position reconciliation");
+
+                // Get current positions from ProjectX
+                var projectXHoldings = GetAccountHoldings();
+                var projectXBalance = GetCashBalance();
+
+                Log.Debug($"ProjectXBrokerage.ReconcilePositions(): ProjectX has {projectXHoldings.Count} position(s) and {projectXBalance.Count} cash balance(s)");
+
+                // TODO: Implement reconciliation logic
+                // 1. Compare ProjectX holdings with LEAN's cached holdings
+                // 2. Identify discrepancies (missing, extra, quantity mismatches)
+                // 3. Log warnings for discrepancies
+                // 4. Fire AccountChanged events if balance differs
+                // 5. Update LEAN state to match ProjectX (ProjectX is source of truth)
+                //
+                // Example:
+                // if (projectXBalance.Count > 0 && projectXBalance[0].Amount != _cachedBalance)
+                // {
+                //     Log.Warning($"ProjectXBrokerage.ReconcilePositions(): Balance mismatch - ProjectX: {projectXBalance[0].Amount}, Cached: {_cachedBalance}");
+                //     OnAccountChanged(new AccountEvent(projectXBalance[0].Currency, projectXBalance[0].Amount));
+                // }
+                //
+                // foreach (var holding in projectXHoldings)
+                // {
+                //     // Check if position exists in LEAN
+                //     // Log discrepancies
+                //     // Fire events if needed
+                // }
+
+                Log.Trace("ProjectXBrokerage.ReconcilePositions(): Reconciliation complete");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.ReconcilePositions(): Error during position reconciliation");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "RECONCILIATION_ERROR",
+                    $"Error during position reconciliation: {ex.Message}"));
+            }
+        }
+
+        /// <summary>
+        /// Handles account update events from ProjectX WebSocket
+        /// </summary>
+        /// <param name="accountUpdate">The account update object from ProjectX</param>
+        private void HandleAccountUpdate(object accountUpdate)
+        {
+            try
+            {
+                // TODO: Replace with actual MarqSpec.Client.ProjectX types when available
+                // Example implementation:
+                //
+                // var update = (ProjectXAccountUpdate)accountUpdate;
+                //
+                // Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Received account update - Type: {update.UpdateType}");
+                //
+                // switch (update.UpdateType)
+                // {
+                //     case AccountUpdateType.Balance:
+                //         // Balance changed
+                //         if (update.AvailableCash.HasValue)
+                //         {
+                //             var currency = string.IsNullOrEmpty(update.Currency) ? "USD" : update.Currency;
+                //             OnAccountChanged(new AccountEvent(currency, update.AvailableCash.Value));
+                //             Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Balance updated - {update.AvailableCash.Value} {currency}");
+                //         }
+                //         break;
+                //
+                //     case AccountUpdateType.Position:
+                //         // Position changed
+                //         if (update.Position != null)
+                //         {
+                //             var holding = ConvertFromProjectXPosition(update.Position);
+                //             // Cache updated position
+                //             Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Position updated - {holding.Symbol}: {holding.Quantity}");
+                //         }
+                //         break;
+                //
+                //     case AccountUpdateType.RealizedPnL:
+                //         // Realized P&L from closed position
+                //         Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Realized P&L - {update.RealizedPnL}");
+                //         break;
+                //
+                //     default:
+                //         Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Unknown update type: {update.UpdateType}");
+                //         break;
+                // }
+
+                Log.Trace("ProjectXBrokerage.HandleAccountUpdate(): MarqSpec.Client.ProjectX integration pending");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.HandleAccountUpdate(): Error handling account update");
+            }
+        }
+
+        /// <summary>
+        /// Subscribes to account update events via WebSocket
+        /// </summary>
+        private void SubscribeToAccountUpdates()
+        {
+            try
+            {
+                Log.Debug("ProjectXBrokerage.SubscribeToAccountUpdates(): Subscribing to account updates");
+
+                // TODO: Replace with actual MarqSpec.Client.ProjectX WebSocket subscription
+                // Example:
+                // await _webSocketClient.SubscribeToAccountUpdatesAsync((update) =>
+                // {
+                //     HandleAccountUpdate(update);
+                // });
+
+                // TODO: Confirm subscription
+                // Log.Trace("ProjectXBrokerage.SubscribeToAccountUpdates(): Successfully subscribed to account updates");
+
+                Log.Trace("ProjectXBrokerage.SubscribeToAccountUpdates(): MarqSpec.Client.ProjectX integration pending");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.SubscribeToAccountUpdates(): Error subscribing to account updates");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "ACCOUNT_SUBSCRIPTION_ERROR",
+                    $"Error subscribing to account updates: {ex.Message}"));
             }
         }
 
