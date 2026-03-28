@@ -18,6 +18,7 @@ using QuantConnect.Packets;
 using QuantConnect.Brokerages;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
+using QuantConnect.Logging;
 using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
@@ -41,6 +42,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         public ProjectXBrokerageFactory() : base(typeof(ProjectXBrokerage))
         {
+            Log.Trace("ProjectXBrokerageFactory(): Initializing factory");
         }
 
         /// <summary>
@@ -49,7 +51,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <param name="orderProvider">The order provider</param>
         public override IBrokerageModel GetBrokerageModel(IOrderProvider orderProvider)
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerageFactory.GetBrokerageModel(): Creating brokerage model");
+            throw new NotImplementedException("ProjectXBrokerageFactory.GetBrokerageModel(): Implementation pending Phase 4");
         }
 
         /// <summary>
@@ -60,7 +63,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>A new brokerage instance</returns>
         public override IBrokerage CreateBrokerage(LiveNodePacket job, IAlgorithm algorithm)
         {
-            throw new NotImplementedException();
+            Log.Trace($"ProjectXBrokerageFactory.CreateBrokerage(): Creating brokerage for user {job?.UserId}");
+            throw new NotImplementedException("ProjectXBrokerageFactory.CreateBrokerage(): Implementation pending Phase 2");
         }
 
         /// <summary>
@@ -68,7 +72,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         public override void Dispose()
         {
-            throw new NotImplementedException();
+            Log.Trace("ProjectXBrokerageFactory.Dispose(): Disposing factory resources");
+            // Nothing to dispose yet, but logging for future cleanup tracking
         }
     }
 }
