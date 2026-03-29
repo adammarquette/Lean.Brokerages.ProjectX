@@ -111,7 +111,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual(0, exceptions, "Thread-safe access should not throw exceptions");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_WithValidConfiguration_Succeeds()
         {
             // Arrange
@@ -124,7 +124,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Should be connected after Connect()");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_WhenAlreadyConnected_DoesNotThrow()
         {
             // Arrange
@@ -172,7 +172,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.That(exception.Message, Does.Contain("Invalid environment"));
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Disconnect_WhenConnected_Succeeds()
         {
             // Arrange
@@ -198,7 +198,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Disconnect(), "Disconnecting when not connected should not throw");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Disconnect_WhenAlreadyDisconnected_DoesNotThrow()
         {
             // Arrange
@@ -211,7 +211,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Disconnect(), "Disconnecting when already disconnected should not throw");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void ConnectDisconnectCycle_Multiple_Succeeds()
         {
             // Arrange
@@ -228,7 +228,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             }
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_WithDefaultValues_LoadsCorrectly()
         {
             // Arrange
@@ -245,7 +245,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Should connect with default configuration values");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_SandboxEnvironment_Accepted()
         {
             // Arrange
@@ -256,7 +256,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Sandbox environment should be valid");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_ProductionEnvironment_Accepted()
         {
             // Arrange
@@ -303,7 +303,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual("ProjectXBrokerage", name);
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Brokerage_Dispose_DisconnectsIfConnected()
         {
             // Arrange
@@ -321,7 +321,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Dispose());
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Heartbeat_AfterConnection_ShouldStart()
         {
             // Arrange
@@ -335,7 +335,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Should remain connected with heartbeat running");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Disconnect_StopsHeartbeat_Successfully()
         {
             // Arrange
@@ -351,7 +351,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsFalse(brokerage.IsConnected, "Should be disconnected");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_ValidRetrySettings_LoadCorrectly()
         {
             // Arrange
@@ -366,7 +366,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Valid retry settings should work");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_MinimumRetryAttempts_Accepted()
         {
             // Arrange
@@ -377,7 +377,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Minimum retry attempts (1) should be valid");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_MaximumRetryAttempts_Accepted()
         {
             // Arrange
@@ -388,7 +388,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Maximum retry attempts (20) should be valid");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void IsConnected_ConcurrentReadsDuringStateChange_NoExceptions()
         {
             // Arrange
@@ -437,7 +437,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual(0, exceptions, "Concurrent reads during state changes should not throw");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_MultipleThreadsSimultaneously_OneSucceeds()
         {
             // Arrange
@@ -476,7 +476,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.Greater(successCount, 0, "At least one thread should succeed");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void MessageEvent_OnSuccessfulConnection_Fired()
         {
             // Arrange
@@ -498,7 +498,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual("CONNECTED", messageCode, "Should receive CONNECTED message");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void MessageEvent_OnDisconnection_Fired()
         {
             // Arrange
@@ -544,7 +544,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Dispose());
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Dispose_MultipleTimes_DoesNotThrow()
         {
             // Arrange
@@ -595,7 +595,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.That(exception.Message, Does.Contain("Invalid environment"));
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_AfterPreviousFailure_CanRetry()
         {
             // Arrange
@@ -620,7 +620,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage2.IsConnected);
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Heartbeat_MaintainsConnection_OverTime()
         {
             // Arrange
@@ -634,7 +634,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Connection should remain active with heartbeat");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void ConnectDisconnect_RapidCycles_HandleGracefully()
         {
             // Arrange
