@@ -480,6 +480,55 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
         }
 
         [Test, Category("RequiresApiCredentials")]
+        public void ConnectDisconnect_ConcurrentCalls_NoDeadlockOrException()
+        {
+            // Arrange
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            var exceptions = 0;
+            var barrier = new Barrier(2);
+
+            // Act
+            var connectThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for(int i = 0; i < 5; i++)
+                    {
+                        brokerage.Connect();
+                        Thread.Sleep(10);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            var disconnectThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for(int i = 0; i < 5; i++)
+                    {
+                        brokerage.Disconnect();
+                        Thread.Sleep(10);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            connectThread.Start();
+            disconnectThread.Start();
+
+            var connectFinished = connectThread.Join(TimeSpan.FromSeconds(10));
+            var disconnectFinished = disconnectThread.Join(TimeSpan.FromSeconds(10));
+
+            // Assert
+            Assert.AreEqual(0, exceptions, "Concurrent connect/disconnect should not throw exceptions.");
+            Assert.IsTrue(connectFinished, "Connect thread should have finished (no deadlock).");
+            Assert.IsTrue(disconnectFinished, "Disconnect thread should have finished (no deadlock).");
+        }
+
+        [Test, Category("RequiresApiCredentials")]
         public void MessageEvent_OnSuccessfulConnection_Fired()
         {
             // Arrange

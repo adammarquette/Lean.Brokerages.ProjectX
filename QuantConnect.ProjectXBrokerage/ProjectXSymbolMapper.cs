@@ -136,6 +136,14 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     $"SecurityType.{symbol.SecurityType} is not supported. Only Futures are supported.", nameof(symbol));
 
             var root = symbol.ID.Symbol;
+
+            // Handle continuous futures, which have a specific, far-future expiration date in LEAN
+            if (symbol.IsCanonical())
+            {
+                // ProjectX brokerage requires the root symbol for continuous futures
+                return root;
+            }
+
             var expiry = symbol.ID.Date;
             var monthCode = _monthToCode[expiry.Month];
             var year2digit = expiry.Year % 100;
@@ -180,34 +188,34 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// </summary>
         private Symbol ParseFuturesTicker(string ticker, string callerMarket = null)
         {
-            if (ticker.Length < 4)
+            if (ticker.Length >= 4)
             {
-                throw new ArgumentException(
-                    $"Invalid futures ticker '{ticker}': minimum length is 4 characters (root + month code + 2-digit year).",
-                    nameof(ticker));
+                var year2digitStr = ticker.Substring(ticker.Length - 2);
+                var monthChar = ticker[ticker.Length - 3];
+
+                if (int.TryParse(year2digitStr, out var year2digit) && _monthCodes.ContainsKey(monthChar))
+                {
+                    // Looks like a specific contract, e.g., ESH25
+                    var root = ticker.Substring(0, ticker.Length - 3);
+                    var month = _monthCodes[monthChar];
+                    var year = 2000 + year2digit;
+
+                    // TODO: This is a simplification. A robust implementation would use a proper futures expiration calendar.
+                    var expiry = GetThirdFriday(year, month); 
+                    var market = GetMarket(root, callerMarket);
+
+                    return Symbol.CreateFuture(root, market, expiry);
+                }
             }
 
-            var year2digitStr = ticker.Substring(ticker.Length - 2);
-            var monthChar     = ticker[ticker.Length - 3];
-            var root          = ticker.Substring(0, ticker.Length - 3);
-
-            if (!int.TryParse(year2digitStr, out var year2digit))
+            // If not a specific contract, check if it's a known root for a continuous future
+            if (_rootToMarket.ContainsKey(ticker))
             {
-                throw new ArgumentException(
-                    $"Invalid futures ticker '{ticker}': last two characters '{year2digitStr}' are not a valid year.", nameof(ticker));
+                var market = GetMarket(ticker, callerMarket);
+                return Symbol.Create(ticker, SecurityType.Future, market);
             }
-
-            if (!_monthCodes.TryGetValue(monthChar, out var month))
-            {
-                throw new ArgumentException(
-                    $"Invalid futures ticker '{ticker}': '{monthChar}' is not a recognized CME month code.", nameof(ticker));
-            }
-
-            var year   = 2000 + year2digit;
-            var expiry = GetThirdFriday(year, month);
-            var market = GetMarket(root, callerMarket);
-
-            return Symbol.CreateFuture(root, market, expiry);
+            
+            throw new ArgumentException($"Invalid futures ticker '{ticker}': does not match a known continuous future or the format <root><month_code><YY>.", nameof(ticker));
         }
 
         /// <summary>
@@ -231,7 +239,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
         /// <summary>
         /// Returns the date of the third Friday of the given month and year.
-        /// This is the standard expiry convention for most CME equity index futures.
+        /// This is the standard expiry convention for most CME equity index futures but is a simplification.
+        /// A robust implementation should use a proper futures expiration calendar.
         /// </summary>
         public static DateTime GetThirdFriday(int year, int month)
         {
