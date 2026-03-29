@@ -54,7 +54,7 @@ using QuantConnect.Data.Market;
 namespace QuantConnect.Brokerages.ProjectXBrokerage
 {
     [BrokerageFactory(typeof(ProjectXBrokerageFactory))]
-    public class ProjectXBrokerage : Brokerage, IDataQueueHandler, IDataQueueUniverseProvider
+    public partial class ProjectXBrokerage : Brokerage
     {
         private readonly IDataAggregator _aggregator;
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
@@ -152,58 +152,6 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             Log.Trace("ProjectXBrokerage(): Initialization complete");
         }
-
-        #region IDataQueueHandler
-
-        /// <summary>
-        /// Subscribe to the specified configuration
-        /// </summary>
-        /// <param name="dataConfig">defines the parameters to subscribe to a data feed</param>
-        /// <param name="newDataAvailableHandler">handler to be fired on new data available</param>
-        /// <returns>The new enumerator for this subscription request</returns>
-        public IEnumerator<BaseData> Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
-        {
-            if (!CanSubscribe(dataConfig.Symbol))
-            {
-                Log.Trace($"ProjectXBrokerage.Subscribe(): Subscription not allowed for symbol: {dataConfig.Symbol}");
-                return null;
-            }
-
-            Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {dataConfig.Symbol}, Resolution: {dataConfig.Resolution}");
-
-            var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
-            _subscriptionManager.Subscribe(dataConfig);
-
-            return enumerator;
-        }
-
-        /// <summary>
-        /// Removes the specified configuration
-        /// </summary>
-        /// <param name="dataConfig">Subscription config to be removed</param>
-        public void Unsubscribe(SubscriptionDataConfig dataConfig)
-        {
-            Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {dataConfig.Symbol}");
-
-            _subscriptionManager.Unsubscribe(dataConfig);
-            _aggregator.Remove(dataConfig);
-        }
-
-        /// <summary>
-        /// Sets the job we're subscribing for
-        /// </summary>
-        /// <param name="job">Job we're subscribing for</param>
-        public void SetJob(LiveNodePacket job)
-        {
-            Log.Trace($"ProjectXBrokerage.SetJob(): Job UserId={job?.UserId}, AlgorithmId={job?.AlgorithmId}");
-
-            if (!IsConnected)
-            {
-                Connect();
-            }
-        }
-
-        #endregion
 
         #region Brokerage
 
@@ -634,147 +582,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         }
 
         #endregion
-
-        #region IDataQueueUniverseProvider
-
-        /// <summary>
-        /// Method returns a collection of Symbols that are available at the data source.
-        /// </summary>
-        /// <param name="symbol">Symbol to lookup</param>
-        /// <param name="includeExpired">Include expired contracts</param>
-        /// <param name="securityCurrency">Expected security currency(if any)</param>
-        /// <returns>Enumerable of Symbols, that are associated with the provided Symbol</returns>
-        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
-        {
-            Log.Trace($"ProjectXBrokerage.LookupSymbols(): Looking up symbols for {symbol}, IncludeExpired: {includeExpired}");
-            try
-            {
-                if (!IsConnected)
-                {
-                    Log.Error("ProjectXBrokerage.LookupSymbols(): Not connected to ProjectX");
-                    return Enumerable.Empty<Symbol>();
-                }
-
-                var root = symbol.ID.Symbol;
-                // live=true returns only active contracts; live=false includes expired contracts
-                var contracts = _apiClient.SearchContractsAsync(root, !includeExpired, CancellationToken.None).GetAwaiter().GetResult();
-
-                var symbols = new List<Symbol>();
-                foreach (var contract in contracts)
-                {
-                    try
-                    {
-                        var leanSymbol = _symbolMapper.GetLeanSymbol(contract.Id, SecurityType.Future, string.Empty);
-                        symbols.Add(leanSymbol);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex, $"ProjectXBrokerage.LookupSymbols(): Failed to map contract {contract.Id}");
-                    }
-                }
-
-                Log.Debug($"ProjectXBrokerage.LookupSymbols(): Found {symbols.Count} symbol(s) for {root}");
-                return symbols;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, $"ProjectXBrokerage.LookupSymbols(): Error looking up symbols for {symbol}");
-                return Enumerable.Empty<Symbol>();
-            }
-        }
-
-        /// <summary>
-        /// Returns whether selection can take place or not.
-        /// </summary>
-        /// <remarks>This is useful to avoid a selection taking place during invalid times, for example IB reset times or when not connected,
-        /// because if allowed selection would fail since IB isn't running and would kill the algorithm</remarks>
-        /// <returns>True if selection can take place</returns>
-        public bool CanPerformSelection()
-        {
-            return IsConnected;
-        }
-
-        #endregion
-
-        private bool CanSubscribe(Symbol symbol)
-        {
-            if (symbol.Value.IndexOfInvariant("universe", true) != -1 || symbol.IsCanonical())
-            {
-                return false;
-            }
-
-            return symbol.SecurityType == SecurityType.Future;
-        }
-
-        /// <summary>
-        /// Adds the specified symbols to the subscription
-        /// </summary>
-        /// <param name="symbols">The symbols to be added keyed by SecurityType</param>
-        private bool Subscribe(IEnumerable<Symbol> symbols)
-        {
-            var symbolList = symbols?.ToList() ?? new List<Symbol>();
-            Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {symbolList.Count} symbols");
-            if (_wsClient == null)
-            {
-                Log.Error("ProjectXBrokerage.Subscribe(): WebSocket client not initialized");
-                return false;
-            }
-
-            var success = true;
-            foreach (var symbol in symbolList)
-            {
-                try
-                {
-                    var contractId = _symbolMapper.GetBrokerageSymbol(symbol);
-                    _wsClient.SubscribeToPriceUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
-                    _wsClient.SubscribeToTradeUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
-                    _subscribedContractIds[contractId] = symbol;
-                    Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribed to {contractId} ({symbol})");
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, $"ProjectXBrokerage.Subscribe(): Error subscribing to {symbol}");
-                    success = false;
-                }
-            }
-
-            return success;
-        }
-
-        /// <summary>
-        /// Removes the specified symbols to the subscription
-        /// </summary>
-        /// <param name="symbols">The symbols to be removed keyed by SecurityType</param>
-        private bool Unsubscribe(IEnumerable<Symbol> symbols)
-        {
-            var symbolList = symbols?.ToList() ?? new List<Symbol>();
-            Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {symbolList.Count} symbols");
-            if (_wsClient == null)
-            {
-                Log.Debug("ProjectXBrokerage.Unsubscribe(): WebSocket client not initialized, skipping");
-                return true;
-            }
-
-            var success = true;
-            foreach (var symbol in symbolList)
-            {
-                try
-                {
-                    var contractId = _symbolMapper.GetBrokerageSymbol(symbol);
-                    _wsClient.UnsubscribeFromPriceUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
-                    _wsClient.UnsubscribeFromTradeUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
-                    _subscribedContractIds.TryRemove(contractId, out _);
-                    Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribed from {contractId} ({symbol})");
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, $"ProjectXBrokerage.Unsubscribe(): Error unsubscribing from {symbol}");
-                    success = false;
-                }
-            }
-
-            return success;
-        }
+               
+        
 
         /// <summary>
         /// Gets the history for the requested symbols
