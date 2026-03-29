@@ -14,30 +14,42 @@
 */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Threading;
 using NUnit.Framework;
+using QuantConnect.Configuration;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
-using QuantConnect.Interfaces;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
     /// <summary>
-    /// Unit tests for Phase 2.2 Order Management functionality
-    /// Tests PlaceOrder, UpdateOrder, CancelOrder, and GetOpenOrders methods
+    /// Tests for Phase 2.2 (Order Management) and Phase 2.4 (Event Handling).
+    ///
+    /// Unit tests (no category / "Unit"): exercise pre-flight validation and
+    /// early-exit paths that return before any API call, using reflection to
+    /// control the _isConnected field without a live connection.
+    ///
+    /// Integration tests ("RequiresApiCredentials"): require real sandbox
+    /// credentials supplied via QC_ environment variables (picked up by
+    /// TestSetup.ReloadConfiguration).
     /// </summary>
     [TestFixture]
     public class ProjectXBrokerageOrderManagementTests
     {
         private ProjectXBrokerage _brokerage;
+        private TestDataAggregator _aggregator;
         private Symbol _testSymbol;
 
         [SetUp]
-        public void Setup()
+        public void SetUp()
         {
-            // TODO: Initialize brokerage with test configuration
-            // _brokerage = new ProjectXBrokerage(new TestDataAggregator());
-            // _testSymbol = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
+            TestSetup.ReloadConfiguration();
+            _aggregator = new TestDataAggregator();
+            _brokerage = new ProjectXBrokerage(_aggregator);
+            _testSymbol = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
         }
 
         [TearDown]
@@ -47,280 +59,359 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             _brokerage?.Dispose();
         }
 
-        #region PlaceOrder Tests
+        // ── Reflection helpers ──────────────────────────────────────────────────
 
-        [Test, Category("Unit")]
-        public void PlaceOrder_WithValidMarketOrder_ReturnsTrue()
+        private void SetConnected(bool connected) =>
+            typeof(ProjectXBrokerage)
+                .GetField("_isConnected", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(_brokerage, connected);
+
+        private ConcurrentDictionary<int, DateTime> GetRecentlySubmitted() =>
+            (ConcurrentDictionary<int, DateTime>)typeof(ProjectXBrokerage)
+                .GetField("_recentlySubmittedOrders", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(_brokerage);
+
+        private static MarketOrder CreateOrder(Symbol symbol, int id = 1, decimal qty = 1m)
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            
-            // Act
-            // var result = _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsTrue(result);
+            var order = new MarketOrder(symbol, qty, DateTime.UtcNow);
+            typeof(Order).GetProperty("Id").SetValue(order, id);
+            return order;
         }
 
-        [Test, Category("Unit")]
-        public void PlaceOrder_WithValidLimitOrder_ReturnsTrue()
+        private static LimitOrder CreateLimitOrder(Symbol symbol, decimal limitPrice, int id = 1, decimal qty = 1m)
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new LimitOrder(_testSymbol, 1, 4500m, DateTime.UtcNow);
-            
-            // Act
-            // var result = _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsTrue(result);
+            var order = new LimitOrder(symbol, qty, limitPrice, DateTime.UtcNow);
+            typeof(Order).GetProperty("Id").SetValue(order, id);
+            return order;
         }
 
-        [Test, Category("Unit")]
-        public void PlaceOrder_WithZeroQuantity_ReturnsFalse()
+        // ── Helpers for integration tests ────────────────────────────────────────
+
+        private void RequireApiCredentials()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOrder(_testSymbol, 0, DateTime.UtcNow);
-            
-            // Act
-            // var result = _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsFalse(result);
+            if (string.IsNullOrEmpty(Config.Get("brokerage-project-x-api-key")))
+                Assert.Ignore("API credentials not configured. Set QC_BROKERAGE_PROJECT_X_API_KEY and related env vars.");
         }
 
-        [Test, Category("Unit")]
+        /// <summary>
+        /// Returns a Symbol whose Value matches a real ProjectX contract ID.
+        /// Skips the test when QC_BROKERAGE_PROJECT_X_TEST_CONTRACT_ID is not set.
+        /// Note: Phase 3 (SymbolMapper) is pending; the raw contract ID is used as
+        /// the symbol value so PlaceOrderRequest.ContractId receives the correct value.
+        /// </summary>
+        private Symbol GetTestContractSymbol()
+        {
+            var contractId = Config.Get("brokerage-project-x-test-contract-id", string.Empty);
+            if (string.IsNullOrEmpty(contractId))
+                Assert.Ignore("No test contract configured. Set QC_BROKERAGE_PROJECT_X_TEST_CONTRACT_ID to a valid sandbox contract ID.");
+
+            return Symbol.CreateFuture(contractId, Market.USA, DateTime.UtcNow.AddMonths(3));
+        }
+
+        // ── PlaceOrder — unit tests ──────────────────────────────────────────────
+
+        [Test]
         public void PlaceOrder_WhenNotConnected_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // _brokerage.Disconnect();
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            
-            // Act
-            // var result = _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsFalse(result);
+            var order = CreateOrder(_testSymbol);
+
+            Assert.IsFalse(_brokerage.PlaceOrder(order));
         }
 
-        [Test, Category("Unit")]
-        public void PlaceOrder_WithDuplicateSubmission_ReturnsFalse()
+        [Test]
+        public void PlaceOrder_WhenNotConnected_FiresInvalidOrderEvent()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            // _brokerage.PlaceOrder(order);
-            
-            // Act - Submit same order again immediately
-            // var result = _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsFalse(result);
+            var order = CreateOrder(_testSymbol);
+            OrderEvent captured = null;
+            _brokerage.OrdersStatusChanged += (_, e) => captured = e[0];
+
+            _brokerage.PlaceOrder(order);
+
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(OrderStatus.Invalid, captured.Status);
         }
 
-        [Test, Category("Unit")]
+        [Test]
+        public void PlaceOrder_WithZeroQuantity_ReturnsFalse()
+        {
+            SetConnected(true);
+            var order = CreateOrder(_testSymbol, qty: 0m);
+
+            Assert.IsFalse(_brokerage.PlaceOrder(order));
+        }
+
+        [Test]
+        public void PlaceOrder_WithZeroQuantity_FiresInvalidOrderEvent()
+        {
+            SetConnected(true);
+            var order = CreateOrder(_testSymbol, qty: 0m);
+            OrderEvent captured = null;
+            _brokerage.OrdersStatusChanged += (_, e) => captured = e[0];
+
+            _brokerage.PlaceOrder(order);
+
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(OrderStatus.Invalid, captured.Status);
+            Assert.That(captured.Message, Does.Contain("Validation").Or.Contain("validation").Or.Contain("quantity").Or.Contain("Quantity"));
+        }
+
+        [Test]
         public void PlaceOrder_WithUnsupportedOrderType_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOnOpenOrder(_testSymbol, 1, DateTime.UtcNow);
-            
-            // Act
-            // var result = _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsFalse(result);
+            SetConnected(true);
+            var order = new MarketOnOpenOrder(_testSymbol, 1, DateTime.UtcNow);
+
+            Assert.IsFalse(_brokerage.PlaceOrder(order));
         }
 
-        [Test, Category("Unit")]
-        public void PlaceOrder_FiresOrderSubmittedEvent()
+        [Test]
+        public void PlaceOrder_WithUnsupportedOrderType_FiresInvalidOrderEvent()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // OrderEvent firedEvent = null;
-            // _brokerage.OrdersStatusChanged += (sender, events) => { firedEvent = events[0]; };
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            
-            // Act
-            // _brokerage.PlaceOrder(order);
-            
-            // Assert
-            // Assert.IsNotNull(firedEvent);
-            // Assert.AreEqual(OrderStatus.Submitted, firedEvent.Status);
+            SetConnected(true);
+            var order = new MarketOnOpenOrder(_testSymbol, 1, DateTime.UtcNow);
+            OrderEvent captured = null;
+            _brokerage.OrdersStatusChanged += (_, e) => captured = e[0];
+
+            _brokerage.PlaceOrder(order);
+
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(OrderStatus.Invalid, captured.Status);
         }
 
-        #endregion
-
-        #region CancelOrder Tests
-
-        [Test, Category("Unit")]
-        public void CancelOrder_WithValidOrderId_ReturnsTrue()
+        [Test]
+        public void PlaceOrder_WithNonFuturesSymbol_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            // _brokerage.PlaceOrder(order);
-            
-            // Act
-            // var result = _brokerage.CancelOrder(order);
-            
-            // Assert
-            // Assert.IsTrue(result);
+            SetConnected(true);
+            var equity = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
+            var order = CreateOrder(equity);
+
+            Assert.IsFalse(_brokerage.PlaceOrder(order));
         }
 
-        [Test, Category("Unit")]
-        public void CancelOrder_WithUnknownOrderId_ReturnsFalse()
+        [Test]
+        public void PlaceOrder_DuplicateSubmission_ReturnsFalse_WithoutFiringEvent()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            // order.Id = 9999; // Order ID not in mapping
-            
-            // Act
-            // var result = _brokerage.CancelOrder(order);
-            
-            // Assert
-            // Assert.IsFalse(result);
+            SetConnected(true);
+            var order = CreateOrder(_testSymbol, id: 77);
+            // Pre-populate the duplicate detection window for this order ID
+            GetRecentlySubmitted().TryAdd(order.Id, DateTime.UtcNow);
+
+            OrderEvent captured = null;
+            _brokerage.OrdersStatusChanged += (_, e) => captured = e[0];
+
+            var result = _brokerage.PlaceOrder(order);
+
+            Assert.IsFalse(result);
+            Assert.IsNull(captured, "Duplicate submissions should not fire an order event");
         }
 
-        [Test, Category("Unit")]
+        // ── CancelOrder — unit tests ─────────────────────────────────────────────
+
+        [Test]
         public void CancelOrder_WhenNotConnected_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            // _brokerage.PlaceOrder(order);
-            // _brokerage.Disconnect();
-            
-            // Act
-            // var result = _brokerage.CancelOrder(order);
-            
-            // Assert
-            // Assert.IsFalse(result);
+            var order = CreateOrder(_testSymbol);
+
+            Assert.IsFalse(_brokerage.CancelOrder(order));
         }
 
-        [Test, Category("Unit")]
-        public void CancelOrder_FiresCancelPendingEvent()
+        [Test]
+        public void CancelOrder_WhenNotConnected_FiresInvalidOrderEvent()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // OrderEvent firedEvent = null;
-            // _brokerage.OrdersStatusChanged += (sender, events) => { firedEvent = events[events.Count - 1]; };
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            // _brokerage.PlaceOrder(order);
-            
-            // Act
-            // _brokerage.CancelOrder(order);
-            
-            // Assert
-            // Assert.IsNotNull(firedEvent);
-            // Assert.AreEqual(OrderStatus.CancelPending, firedEvent.Status);
+            var order = CreateOrder(_testSymbol);
+            OrderEvent captured = null;
+            _brokerage.OrdersStatusChanged += (_, e) => captured = e[0];
+
+            _brokerage.CancelOrder(order);
+
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(OrderStatus.Invalid, captured.Status);
         }
 
-        #endregion
-
-        #region UpdateOrder Tests
-
-        [Test, Category("Unit")]
-        public void UpdateOrder_ReturnsFalse_NotSupported()
+        [Test]
+        public void CancelOrder_WithUnmappedOrderId_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // var order = new LimitOrder(_testSymbol, 1, 4500m, DateTime.UtcNow);
-            // _brokerage.PlaceOrder(order);
-            // order.LimitPrice = 4510m;
-            
-            // Act
-            // var result = _brokerage.UpdateOrder(order);
-            
-            // Assert - UpdateOrder not supported, should return false
-            // Assert.IsFalse(result);
+            SetConnected(true);
+            var order = CreateOrder(_testSymbol, id: 8888);
+
+            // No mapping exists for this order — returns false before any API call
+            Assert.IsFalse(_brokerage.CancelOrder(order));
         }
 
-        #endregion
+        // ── UpdateOrder — unit tests ─────────────────────────────────────────────
 
-        #region GetOpenOrders Tests
-
-        [Test, Category("Unit")]
-        public void GetOpenOrders_WhenConnected_ReturnsOrders()
+        [Test]
+        public void UpdateOrder_WhenNotConnected_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // _brokerage.Connect();
-            
-            // Act
-            // var orders = _brokerage.GetOpenOrders();
-            
-            // Assert
-            // Assert.IsNotNull(orders);
+            var order = CreateLimitOrder(_testSymbol, limitPrice: 4500m);
+
+            Assert.IsFalse(_brokerage.UpdateOrder(order));
         }
 
-        [Test, Category("Unit")]
+        [Test]
+        public void UpdateOrder_WithUnmappedOrderId_ReturnsFalse()
+        {
+            SetConnected(true);
+            var order = CreateLimitOrder(_testSymbol, limitPrice: 4500m, id: 7777);
+
+            // No mapping exists — returns false before any API call
+            Assert.IsFalse(_brokerage.UpdateOrder(order));
+        }
+
+        // ── GetOpenOrders — unit tests ───────────────────────────────────────────
+
+        [Test]
         public void GetOpenOrders_WhenNotConnected_ReturnsEmptyList()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange
-            // _brokerage.Disconnect();
-            
-            // Act
-            // var orders = _brokerage.GetOpenOrders();
-            
-            // Assert
-            // Assert.IsNotNull(orders);
-            // Assert.IsEmpty(orders);
+            var orders = _brokerage.GetOpenOrders();
+
+            Assert.IsNotNull(orders);
+            Assert.IsEmpty(orders);
         }
 
-        [Test, Category("Unit")]
-        public void GetOpenOrders_FiltersOutFilledOrders()
+        // ── GetAccountHoldings / GetCashBalance — unit tests ─────────────────────
+
+        [Test]
+        public void GetAccountHoldings_WhenNotConnected_ReturnsEmptyList()
         {
-            Assert.Ignore("TODO: Implement test once MarqSpec.Client.ProjectX is integrated");
-            
-            // Arrange & Act
-            // var orders = _brokerage.GetOpenOrders();
-            
-            // Assert
-            // Assert.IsTrue(orders.TrueForAll(o => o.Status != OrderStatus.Filled));
+            var holdings = _brokerage.GetAccountHoldings();
+
+            Assert.IsNotNull(holdings);
+            Assert.IsEmpty(holdings);
         }
 
-        #endregion
-
-        #region Integration Tests
-
-        [Test, Category("RequiresApiCredentials"), Category("Integration")]
-        public void PlaceOrder_IntegrationTest_WithRealApi()
+        [Test]
+        public void GetCashBalance_WhenNotConnected_ReturnsEmptyList()
         {
-            Assert.Ignore("TODO: Implement integration test with ProjectX sandbox environment");
-            
-            // This test requires real API credentials and sandbox environment
-            // Will be implemented during Phase 2.2 completion
+            var balances = _brokerage.GetCashBalance();
+
+            Assert.IsNotNull(balances);
+            Assert.IsEmpty(balances);
         }
 
-        [Test, Category("RequiresApiCredentials"), Category("Integration")]
-        public void CancelOrder_IntegrationTest_WithRealApi()
+        // ── Integration tests ────────────────────────────────────────────────────
+
+        [Test, Category("RequiresApiCredentials")]
+        public void GetOpenOrders_WhenConnected_ReturnsNonNullList()
         {
-            Assert.Ignore("TODO: Implement integration test with ProjectX sandbox environment");
-            
-            // This test requires real API credentials and sandbox environment
-            // Will be implemented during Phase 2.2 completion
+            RequireApiCredentials();
+            _brokerage.Connect();
+
+            var orders = _brokerage.GetOpenOrders();
+
+            Assert.IsNotNull(orders, "GetOpenOrders should never return null when connected");
         }
 
-        #endregion
+        [Test, Category("RequiresApiCredentials")]
+        public void GetAccountHoldings_WhenConnected_ReturnsNonNullList()
+        {
+            RequireApiCredentials();
+            _brokerage.Connect();
+
+            var holdings = _brokerage.GetAccountHoldings();
+
+            // API v1.0.1 does not expose a positions endpoint — expect empty list
+            Assert.IsNotNull(holdings);
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void GetCashBalance_WhenConnected_ReturnsNonNullList()
+        {
+            RequireApiCredentials();
+            _brokerage.Connect();
+
+            var balances = _brokerage.GetCashBalance();
+
+            // API v1.0.1 does not expose a balance endpoint — expect empty list
+            Assert.IsNotNull(balances);
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void PlaceLimitOrder_FiresSubmittedEvent_AndReturnsTrue()
+        {
+            RequireApiCredentials();
+            var symbol = GetTestContractSymbol();
+            _brokerage.Connect();
+
+            OrderEvent captured = null;
+            _brokerage.OrdersStatusChanged += (_, e) => captured = e[0];
+
+            // Use a price far from market so the order rests in the book
+            var order = CreateLimitOrder(symbol, limitPrice: 1m, id: 1001);
+            var result = _brokerage.PlaceOrder(order);
+
+            Assert.IsTrue(result, "PlaceOrder should return true for a valid order");
+            Assert.IsNotNull(captured, "OrdersStatusChanged should fire synchronously");
+            Assert.AreEqual(OrderStatus.Submitted, captured.Status);
+
+            // Clean up — best-effort cancel
+            _brokerage.CancelOrder(order);
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void CancelOrder_AfterPlace_FiresCancelPendingEvent()
+        {
+            RequireApiCredentials();
+            var symbol = GetTestContractSymbol();
+            _brokerage.Connect();
+
+            var order = CreateLimitOrder(symbol, limitPrice: 1m, id: 1002);
+            _brokerage.PlaceOrder(order);
+
+            var events = new ConcurrentBag<OrderEvent>();
+            _brokerage.OrdersStatusChanged += (_, e) => events.Add(e[0]);
+
+            var result = _brokerage.CancelOrder(order);
+
+            Assert.IsTrue(result, "CancelOrder should return true");
+            Assert.IsTrue(
+                SpinWait(() => ContainsStatus(events, OrderStatus.CancelPending), TimeSpan.FromSeconds(5)),
+                "CancelPending event should be fired");
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void PlaceAndCancel_FullLifecycle_WebSocketFiresCanceledEvent()
+        {
+            RequireApiCredentials();
+            var symbol = GetTestContractSymbol();
+            _brokerage.Connect();
+
+            var events = new ConcurrentBag<OrderEvent>();
+            _brokerage.OrdersStatusChanged += (_, e) => events.Add(e[0]);
+
+            var order = CreateLimitOrder(symbol, limitPrice: 1m, id: 1003);
+
+            Assert.IsTrue(_brokerage.PlaceOrder(order), "PlaceOrder failed");
+            Assert.IsTrue(SpinWait(() => ContainsStatus(events, OrderStatus.Submitted), TimeSpan.FromSeconds(5)),
+                "Submitted event not received");
+
+            Assert.IsTrue(_brokerage.CancelOrder(order), "CancelOrder failed");
+            Assert.IsTrue(SpinWait(() => ContainsStatus(events, OrderStatus.CancelPending), TimeSpan.FromSeconds(5)),
+                "CancelPending event not received");
+
+            // Wait for the async WebSocket confirmation
+            Assert.IsTrue(SpinWait(() => ContainsStatus(events, OrderStatus.Canceled), TimeSpan.FromSeconds(15)),
+                "Canceled event was not received from WebSocket within 15 s");
+        }
+
+        // ── Helpers ──────────────────────────────────────────────────────────────
+
+        private static bool SpinWait(Func<bool> condition, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (condition()) return true;
+                Thread.Sleep(100);
+            }
+            return condition();
+        }
+
+        private static bool ContainsStatus(ConcurrentBag<OrderEvent> bag, OrderStatus status)
+        {
+            foreach (var e in bag)
+                if (e.Status == status) return true;
+            return false;
+        }
     }
 }
