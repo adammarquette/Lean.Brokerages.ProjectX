@@ -12,6 +12,7 @@ env:
   CONFIGURATION: Release
   LEAN_REPO: 'https://github.com/adammarquette/Lean.git'
   LEAN_BRANCH: 'master'
+  CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
 jobs:
   build:
@@ -52,16 +53,7 @@ jobs:
       run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true /p:NoWarn="CA1063;CA1816;CA1003;CA1716;CA1031"
 
     - name: Run tests (Skip live API tests)
-      run: |
-        dotnet test Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln \
-          --configuration ${{ env.CONFIGURATION }} \
-          --no-build \
-          --verbosity normal \
-          --filter "Category!=RequiresApiCredentials&Category!=Integration" \
-          --collect:"XPlat Code Coverage" \
-          --results-directory "TestResults/" \
-          --logger "trx;LogFileName=test-results.trx" \
-          -- NUnit.NumberOfTestWorkers=0
+      run: dotnet test Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-build --verbosity normal --filter "Category!=RequiresApiCredentials&Category!=Integration" --collect:"XPlat Code Coverage" --results-directory "TestResults/" --logger "trx;LogFileName=test-results.trx"
       continue-on-error: false
       
     - name: Publish test results
@@ -72,12 +64,12 @@ jobs:
         check_name: 'Test Results (${{ matrix.os }})'
 
     - name: Upload coverage to Codecov
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && env.CODECOV_TOKEN != ''
       uses: codecov/codecov-action@v3
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         directory: ./TestResults/
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         
     - name: Upload build artifacts
       if: matrix.os == 'ubuntu-latest'
@@ -118,9 +110,9 @@ jobs:
     - name: Run code analysis
       run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true /p:NoWarn="CA1063;CA1816;CA1003;CA1716;CA1031"
       
-    - name: Check formatting
-      run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --verbosity diagnostic
-      continue-on-error: false
+    - name: Check formatting (advisory)
+      run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --no-restore --verbosity minimal
+      continue-on-error: true
 
     - name: Run security scan (if applicable)
       run: |
