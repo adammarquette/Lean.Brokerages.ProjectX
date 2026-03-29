@@ -30,7 +30,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             OrderType.Market,
             OrderType.Limit,
             OrderType.StopMarket,
-            OrderType.StopLimit
+            OrderType.StopLimit,
+            OrderType.TrailingStop
         };
 
         /// <summary>
@@ -41,7 +42,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             if (!_supportedOrderTypes.Contains(order.Type))
             {
                 message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
-                    $"ProjectX does not support {order.Type} orders. Supported types: Market, Limit, StopMarket, StopLimit.");
+                    $"ProjectX does not support {order.Type} orders. Supported types: Market, Limit, StopMarket, StopLimit, TrailingStop.");
                 return false;
             }
 

@@ -185,7 +185,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     AskPrice = e.AskPrice,
                     BidSize = (decimal)e.BidSize,
                     AskSize = (decimal)e.AskSize,
-                    Value = (e.BidPrice + e.AskPrice) / 2m
+                    Value = e.LastPrice
                 };
 
                 _aggregator.Update(tick);

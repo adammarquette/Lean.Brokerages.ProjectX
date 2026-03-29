@@ -741,7 +741,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     unit,
                     1,
                     limit,
-                    false,
+                    true,
                     false,
                     CancellationToken.None
                 ).GetAwaiter().GetResult();
@@ -1007,7 +1007,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                                 $"Market: {_wsClient?.MarketHubState}, User: {_wsClient?.UserHubState}");
                         }
 
-                        Log.Trace("ProjectXBrokerage.Heartbeat(): WebSocket connections healthy");
+                        var pingOk = await _apiClient.PingAsync(CancellationToken.None);
+                        if (!pingOk)
+                        {
+                            throw new Exception("ProjectX API ping failed — service may be unreachable");
+                        }
+
+                        Log.Trace("ProjectXBrokerage.Heartbeat(): WebSocket connections and API ping healthy");
                     }
                     catch (OperationCanceledException)
                     {
@@ -1258,6 +1264,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     case OrderType.Limit:
                     case OrderType.StopMarket:
                     case OrderType.StopLimit:
+                    case OrderType.TrailingStop:
                         // Supported order types
                         break;
 
@@ -1265,7 +1272,6 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     case OrderType.MarketOnClose:
                     case OrderType.OptionExercise:
                     case OrderType.LimitIfTouched:
-                    case OrderType.TrailingStop:
                     case OrderType.ComboMarket:
                     case OrderType.ComboLimit:
                     case OrderType.ComboLegLimit:
@@ -1298,6 +1304,18 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     if (stopOrder != null && stopOrder.StopPrice <= 0)
                     {
                         errorMessage = "Stop price must be greater than zero";
+                        Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                        return false;
+                    }
+                }
+
+                // Validate TrailingStop order has positive trailing amount
+                if (order.Type == OrderType.TrailingStop)
+                {
+                    var trailingStopOrder = order as Orders.TrailingStopOrder;
+                    if (trailingStopOrder != null && trailingStopOrder.TrailingAmount <= 0)
+                    {
+                        errorMessage = "Trailing amount must be greater than zero";
                         Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
                         return false;
                     }
@@ -1448,6 +1466,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             }
             else if (order is StopMarketOrder stopMarketOrder)
                 request.StopPrice = stopMarketOrder.StopPrice;
+            else if (order is TrailingStopOrder trailingStopOrder)
+                request.TrailPrice = trailingStopOrder.TrailingAmount;
 
             Log.Debug($"ProjectXBrokerage.ConvertToProjectXOrder(): LEAN {order.Id} -> ContractId={request.ContractId}, Type={pxType}, Side={side}, Size={request.Size}");
             return request;
@@ -1480,6 +1500,9 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     break;
                 case PxOrderType.StopLimit:
                     leanOrder = new StopLimitOrder(symbol, qty, pxOrder.StopPrice ?? 0m, pxOrder.LimitPrice ?? 0m, time);
+                    break;
+                case PxOrderType.TrailingStop:
+                    leanOrder = new TrailingStopOrder(symbol, qty, pxOrder.StopPrice ?? 0m, 0m, false, time);
                     break;
                 default:
                     throw new NotSupportedException($"ProjectX order type '{pxOrder.Type}' is not supported");
@@ -1559,11 +1582,27 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
                 if (!_ordersCache.TryGetValue(e.OrderId, out var order))
                 {
-                    // The update event arrived before PlaceOrder completed or is from a different session.
-                    // The ProjectX API does not provide a CustomTag field on OrderUpdate, so we cannot
-                    // correlate this update to a LEAN order without the cache entry.
-                    Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): No cached LEAN order for ProjectX ID={e.OrderId}. This may be an order from a different session.");
-                    return;
+                    // Cache miss — attempt REST recovery using GetOrderAsync (new in 1.0.3)
+                    Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): Cache miss for ProjectX ID={e.OrderId}, attempting REST recovery");
+                    try
+                    {
+                        var pxOrder = _apiClient.GetOrderAsync(_accountId, e.OrderId, CancellationToken.None).GetAwaiter().GetResult();
+                        if (pxOrder != null)
+                        {
+                            order = ConvertFromProjectXOrder(pxOrder);
+                            _ordersCache[e.OrderId] = order;
+                        }
+                    }
+                    catch (Exception restEx)
+                    {
+                        Log.Error(restEx, $"ProjectXBrokerage.OnOrderUpdateReceived(): REST recovery failed for ProjectX ID={e.OrderId}");
+                    }
+
+                    if (order == null)
+                    {
+                        Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): No LEAN order found for ProjectX ID={e.OrderId}. Skipping update.");
+                        return;
+                    }
                 }
 
                 var leanStatus = ConvertOrderStatus(e.Status);
@@ -1571,7 +1610,15 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 var filledQty = (decimal)e.FilledQuantity;
                 var signedFillQty = filledQty * (order.Direction == Orders.OrderDirection.Buy ? 1m : -1m);
 
-                var orderEvent = new OrderEvent(order, e.Timestamp, OrderFee.Zero, $"ProjectX: {e.Status}")
+                string eventMessage;
+                if (!string.IsNullOrEmpty(e.RejectionReason))
+                    eventMessage = $"ProjectX Rejected: {e.RejectionReason}";
+                else if (!string.IsNullOrEmpty(e.Message))
+                    eventMessage = $"ProjectX: {e.Status} — {e.Message}";
+                else
+                    eventMessage = $"ProjectX: {e.Status}";
+
+                var orderEvent = new OrderEvent(order, e.Timestamp, OrderFee.Zero, eventMessage)
                 {
                     Status = leanStatus,
                     FillPrice = fillPrice,
@@ -1604,6 +1651,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 case OrderType.Limit:     return PxOrderType.Limit;
                 case OrderType.StopMarket: return PxOrderType.Stop;
                 case OrderType.StopLimit: return PxOrderType.StopLimit;
+                case OrderType.TrailingStop: return PxOrderType.TrailingStop;
                 default:
                     throw new NotSupportedException($"LEAN OrderType.{orderType} is not supported by ProjectX");
             }
