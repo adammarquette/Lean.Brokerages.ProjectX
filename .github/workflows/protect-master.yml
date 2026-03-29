@@ -11,6 +11,7 @@ jobs:
   check-actor:
     name: Verify Authorized Committer
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
     permissions: {}
     steps:
       - name: Check if actor is authorized
