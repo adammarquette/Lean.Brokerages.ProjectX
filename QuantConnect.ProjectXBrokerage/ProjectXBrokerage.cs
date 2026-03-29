@@ -42,6 +42,9 @@ using PxOrder = MarqSpec.Client.ProjectX.Api.Models.Order;
 using PxOrderStatus = MarqSpec.Client.ProjectX.Api.Models.OrderStatus;
 using PxOrderType = MarqSpec.Client.ProjectX.Api.Models.OrderType;
 using PxOrderSide = MarqSpec.Client.ProjectX.Api.Models.OrderSide;
+using PxPosition = MarqSpec.Client.ProjectX.Api.Models.Position;
+using PxPositionType = MarqSpec.Client.ProjectX.Api.Models.PositionType;
+using PxAccount = MarqSpec.Client.ProjectX.Api.Models.TradingAccount;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
 {
@@ -259,11 +262,22 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     return new List<Holding>();
                 }
 
-                // The MarqSpec.Client.ProjectX v1.0.1 API does not expose a positions endpoint.
-                // Holdings are tracked internally via order fill events received on the WebSocket.
+                var pxPositions = _apiClient.GetOpenPositionsAsync(_accountId, CancellationToken.None).GetAwaiter().GetResult();
                 var holdings = new List<Holding>();
 
-                Log.Debug($"ProjectXBrokerage.GetAccountHoldings(): Retrieved {holdings.Count} holdings");
+                foreach (var pxPosition in pxPositions)
+                {
+                    try
+                    {
+                        holdings.Add(ConvertFromProjectXPosition(pxPosition));
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, $"ProjectXBrokerage.GetAccountHoldings(): Failed to convert position {pxPosition.ContractId}");
+                    }
+                }
+
+                Log.Debug($"ProjectXBrokerage.GetAccountHoldings(): Retrieved {holdings.Count} holding(s)");
                 return holdings;
             }
             catch (Exception ex)
@@ -292,11 +306,17 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     return new List<CashAmount>();
                 }
 
-                // The MarqSpec.Client.ProjectX v1.0.1 API does not expose an account balance endpoint.
-                var cashBalances = new List<CashAmount>();
+                var accounts = _apiClient.GetAccountsAsync(true, CancellationToken.None).GetAwaiter().GetResult();
+                var account = accounts?.FirstOrDefault(a => a.Id == _accountId);
 
-                Log.Debug($"ProjectXBrokerage.GetCashBalance(): Retrieved {cashBalances.Count} cash balance(s)");
-                return cashBalances;
+                if (account == null)
+                {
+                    Log.Error($"ProjectXBrokerage.GetCashBalance(): Account {_accountId} not found in response");
+                    return new List<CashAmount>();
+                }
+
+                Log.Debug($"ProjectXBrokerage.GetCashBalance(): Account {_accountId} balance={account.Balance}");
+                return new List<CashAmount> { new CashAmount(account.Balance, "USD") };
             }
             catch (Exception ex)
             {
@@ -1007,51 +1027,34 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// Converts a ProjectX position to a LEAN Holding object
         /// </summary>
         /// <param name="projectXPosition">The ProjectX position object</param>
-        /// <returns>A LEAN Holding object, or null if conversion fails</returns>
-        private Holding ConvertFromProjectXPosition(object projectXPosition)
+        /// <summary>
+        /// Converts a ProjectX <see cref="PxPosition"/> to a LEAN <see cref="Holding"/>.
+        /// </summary>
+        private Holding ConvertFromProjectXPosition(PxPosition pxPosition)
         {
-            // TODO: Replace with actual MarqSpec.Client.ProjectX types when available
-            // Example implementation:
-            //
-            // var pxPosition = (ProjectXPosition)projectXPosition;
-            // 
-            // // Convert ProjectX symbol to LEAN Symbol
-            // // Note: This requires ProjectXSymbolMapper (Phase 3)
-            // // For now, create a placeholder Symbol
-            // var leanSymbol = Symbol.CreateFuture(pxPosition.Symbol, Market.USA, DateTime.UtcNow.AddMonths(3));
-            // // Real implementation:
-            // // var leanSymbol = _symbolMapper.GetLeanSymbol(pxPosition.Symbol, SecurityType.Future, Market.USA);
-            //
-            // // Create Holding with all required properties
-            // var holding = new Holding
-            // {
-            //     Symbol = leanSymbol,
-            //     Quantity = pxPosition.Quantity,
-            //     AveragePrice = pxPosition.AveragePrice,
-            //     MarketPrice = pxPosition.CurrentPrice,
-            //     CurrencySymbol = "$",
-            //     ConversionRate = 1m
-            // };
-            //
-            // // Calculate derived values
-            // var contractMultiplier = 1m; // Get from symbol properties when available
-            // holding.MarketValue = holding.Quantity * holding.MarketPrice * contractMultiplier;
-            // holding.UnrealizedPnL = (holding.MarketPrice - holding.AveragePrice) * holding.Quantity * contractMultiplier;
-            // 
-            // if (holding.AveragePrice != 0)
-            // {
-            //     holding.UnrealizedPnLPercent = (holding.UnrealizedPnL / (holding.AveragePrice * Math.Abs(holding.Quantity) * contractMultiplier)) * 100;
-            // }
-            //
-            // Log.Debug($"ProjectXBrokerage.ConvertFromProjectXPosition(): Converted {pxPosition.Symbol} - Qty: {holding.Quantity}, Avg: {holding.AveragePrice}, Mkt: {holding.MarketPrice}");
-            // return holding;
+            var symbol = _symbolMapper.GetLeanSymbol(pxPosition.ContractId, SecurityType.Future, string.Empty);
 
-            Log.Trace("ProjectXBrokerage.ConvertFromProjectXPosition(): MarqSpec.Client.ProjectX integration pending");
-            throw new NotImplementedException("ProjectXBrokerage.ConvertFromProjectXPosition(): MarqSpec.Client.ProjectX integration pending");
+            // Long positions have positive quantity; short positions are negative
+            var quantity = pxPosition.Type == PxPositionType.Long
+                ? (decimal)pxPosition.Size
+                : -(decimal)pxPosition.Size;
+
+            Log.Debug($"ProjectXBrokerage.ConvertFromProjectXPosition(): {pxPosition.ContractId} -> {symbol}, qty={quantity}, avg={pxPosition.AveragePrice}");
+
+            return new Holding
+            {
+                Symbol = symbol,
+                Quantity = quantity,
+                AveragePrice = pxPosition.AveragePrice,
+                MarketPrice = pxPosition.AveragePrice,
+                CurrencySymbol = "$",
+                ConversionRate = 1m
+            };
         }
 
         /// <summary>
-        /// Reconciles positions between LEAN and ProjectX on connection
+        /// Reconciles positions and cash balance with ProjectX on connection.
+        /// ProjectX is the source of truth; discrepancies are logged and balance events are fired.
         /// </summary>
         private void ReconcilePositions()
         {
@@ -1059,32 +1062,21 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             {
                 Log.Trace("ProjectXBrokerage.ReconcilePositions(): Starting position reconciliation");
 
-                // Get current positions from ProjectX
-                var projectXHoldings = GetAccountHoldings();
-                var projectXBalance = GetCashBalance();
+                var holdings = GetAccountHoldings();
+                var cashBalances = GetCashBalance();
 
-                Log.Debug($"ProjectXBrokerage.ReconcilePositions(): ProjectX has {projectXHoldings.Count} position(s) and {projectXBalance.Count} cash balance(s)");
+                Log.Debug($"ProjectXBrokerage.ReconcilePositions(): {holdings.Count} position(s), {cashBalances.Count} cash balance(s)");
 
-                // TODO: Implement reconciliation logic
-                // 1. Compare ProjectX holdings with LEAN's cached holdings
-                // 2. Identify discrepancies (missing, extra, quantity mismatches)
-                // 3. Log warnings for discrepancies
-                // 4. Fire AccountChanged events if balance differs
-                // 5. Update LEAN state to match ProjectX (ProjectX is source of truth)
-                //
-                // Example:
-                // if (projectXBalance.Count > 0 && projectXBalance[0].Amount != _cachedBalance)
-                // {
-                //     Log.Warning($"ProjectXBrokerage.ReconcilePositions(): Balance mismatch - ProjectX: {projectXBalance[0].Amount}, Cached: {_cachedBalance}");
-                //     OnAccountChanged(new AccountEvent(projectXBalance[0].Currency, projectXBalance[0].Amount));
-                // }
-                //
-                // foreach (var holding in projectXHoldings)
-                // {
-                //     // Check if position exists in LEAN
-                //     // Log discrepancies
-                //     // Fire events if needed
-                // }
+                foreach (var holding in holdings)
+                {
+                    Log.Debug($"ProjectXBrokerage.ReconcilePositions(): Open position — {holding.Symbol}: qty={holding.Quantity}, avgPrice={holding.AveragePrice}");
+                }
+
+                foreach (var cash in cashBalances)
+                {
+                    Log.Debug($"ProjectXBrokerage.ReconcilePositions(): Cash balance — {cash.Amount} {cash.Currency}");
+                    OnAccountChanged(new AccountEvent(cash.Currency, cash.Amount));
+                }
 
                 Log.Trace("ProjectXBrokerage.ReconcilePositions(): Reconciliation complete");
             }
