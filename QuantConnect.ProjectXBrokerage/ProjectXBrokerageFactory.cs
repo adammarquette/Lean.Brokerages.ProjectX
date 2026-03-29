@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -35,7 +35,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// The implementation of this property will create the brokerage data dictionary required for
         /// running live jobs. See <see cref="IJobQueueHandler.NextJob"/>
         /// </remarks>
-        public override Dictionary<string, string> BrokerageData { get; }
+        public override Dictionary<string, string> BrokerageData => new Dictionary<string, string>
+        {
+            { "brokerage-project-x-api-key", "" },
+            { "brokerage-project-x-api-secret", "" },
+            { "brokerage-project-x-environment", "production" },
+            { "brokerage-project-x-account-id", "0" }
+        };
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ProjectXBrokerageFactory"/> class
@@ -52,7 +58,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override IBrokerageModel GetBrokerageModel(IOrderProvider orderProvider)
         {
             Log.Trace("ProjectXBrokerageFactory.GetBrokerageModel(): Creating brokerage model");
-            throw new NotImplementedException("ProjectXBrokerageFactory.GetBrokerageModel(): Implementation pending Phase 4");
+            // Replace with actual model once Phase 4 is reached, or return a default placeholder
+            return new DefaultBrokerageModel(); 
         }
 
         /// <summary>
@@ -64,7 +71,22 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override IBrokerage CreateBrokerage(LiveNodePacket job, IAlgorithm algorithm)
         {
             Log.Trace($"ProjectXBrokerageFactory.CreateBrokerage(): Creating brokerage for user {job?.UserId}");
-            throw new NotImplementedException("ProjectXBrokerageFactory.CreateBrokerage(): Implementation pending Phase 2");
+            
+            var errors = new List<string>();
+            var apiKey = Read<string>(job.BrokerageData, "brokerage-project-x-api-key", errors);
+            var apiSecret = Read<string>(job.BrokerageData, "brokerage-project-x-api-secret", errors);
+            var environment = Read<string>(job.BrokerageData, "brokerage-project-x-environment", errors);
+            var accountId = Read<int>(job.BrokerageData, "brokerage-project-x-account-id", errors);
+
+            if (errors.Count > 0)
+            {
+                var missingKeys = string.Join(", ", errors);
+                Log.Error($"ProjectXBrokerageFactory.CreateBrokerage(): Missing keys in configuration: {missingKeys}");
+                throw new ArgumentException($"Missing required configuration keys: {missingKeys}");
+            }
+
+            var aggregator = Composer.Instance.GetPart<IDataAggregator>();
+            return new ProjectXBrokerage(apiKey, apiSecret, environment, accountId, aggregator);
         }
 
         /// <summary>

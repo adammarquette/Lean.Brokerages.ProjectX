@@ -121,6 +121,36 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         }
 
         /// <summary>
+        /// Creates a new instance of the ProjectXBrokerage with explicit parameters
+        /// </summary>
+        /// <param name="apiKey">The ProjectX API key</param>
+        /// <param name="apiSecret">The ProjectX API secret</param>
+        /// <param name="environment">The target environment (sandbox or production)</param>
+        /// <param name="accountId">The ProjectX account ID</param>
+        /// <param name="aggregator">The data aggregator for consolidating ticks</param>
+        public ProjectXBrokerage(string apiKey, string apiSecret, string environment, int accountId, IDataAggregator aggregator) : base("ProjectXBrokerage")
+        {
+            Log.Trace("ProjectXBrokerage(): Initializing ProjectX brokerage instance with explicit configuration");
+
+            _aggregator = aggregator ?? Composer.Instance.GetPart<IDataAggregator>();
+            _symbolMapper = new ProjectXSymbolMapper();
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
+            _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
+
+            _apiKey = apiKey;
+            _apiSecret = apiSecret;
+            _environment = environment;
+            _accountId = accountId;
+            
+            LoadOptionalConfiguration();
+
+            // Initialize connection state
+            _isConnected = false;
+            _connectionCts = new CancellationTokenSource();
+        }
+
+        /// <summary>
         /// Creates a new instance
         /// </summary>
         /// <param name="aggregator">consolidate ticks</param>
@@ -690,12 +720,20 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             // Load environment setting
             _environment = Config.Get("brokerage-project-x-environment", "production");
+            _accountId = Config.GetInt("brokerage-project-x-account-id", 0);
 
+            LoadOptionalConfiguration();
+        }
+
+        /// <summary>
+        /// Loads optional configuration items like retries, timeouts, and base URLs
+        /// </summary>
+        private void LoadOptionalConfiguration()
+        {
             // Load retry/reconnect settings
             _maxReconnectAttempts = Config.GetInt("brokerage-project-x-reconnect-attempts", 5);
             _reconnectDelayMilliseconds = Config.GetInt("brokerage-project-x-reconnect-delay", 1000);
             _connectionTimeoutMilliseconds = Config.GetInt("brokerage-project-x-connection-timeout", 30000);
-            _accountId = Config.GetInt("brokerage-project-x-account-id", 0);
             _baseUrl = Config.Get("brokerage-project-x-base-url", "https://gateway.projectx.com/api");
 
             Log.Debug($"ProjectXBrokerage.LoadConfiguration(): Environment={_environment}, MaxRetries={_maxReconnectAttempts}, AccountId={_accountId}");
