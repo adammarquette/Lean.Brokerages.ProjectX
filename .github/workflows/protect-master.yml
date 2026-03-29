@@ -11,10 +11,10 @@ jobs:
   check-actor:
     name: Verify Authorized Committer
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
     permissions: {}
     steps:
       - name: Check if actor is authorized
-        if: ${{ github.event_name == 'push' }}
         run: |
           ACTOR="${{ github.actor }}"
           AUTHORIZED="adammarquette"
