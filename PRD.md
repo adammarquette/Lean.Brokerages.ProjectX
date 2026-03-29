@@ -1,7 +1,7 @@
 # ProjectX LEAN Brokerage Integration
 
-**Status:** Phase 1 - Foundation Complete | Phase 2 - Core Trading (Planning)  
-**Last Updated:** March 2026
+**Status:** Phases 1–6 Complete | API Refinements (PR #28 "Fix Gaps")  
+**Last Updated:** March 29, 2026
 **Project Lead:** Marquette Speculations  
 **Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
 
@@ -57,11 +57,11 @@ directly on ProjectX while maintaining full compatibility with LEAN's ecosystem.
 4. **.NET Version** - Requires .NET 10 compatibility with LEAN Engine
 
 ### Success Criteria
-- [ ] All LEAN interface contracts fully implemented
+- [x] All LEAN interface contracts fully implemented (Phases 2–6)
 - [ ] Integration test suite with >90% code coverage
 - [ ] Successful paper trading for minimum 30 days without critical errors
 - [ ] Live trading validation with real account
-- [ ] Documentation approved by code review
+- [x] Documentation approved by code review
 - [ ] Performance benchmarks meeting LEAN standards (< 100ms order latency, < 1s data lag)
 
 ## User Stories
@@ -111,7 +111,8 @@ Following LEAN's brokerage architecture, this integration implements:
 
 #### 4. IBrokerageModel
 **Purpose:** Define brokerage capabilities and constraints
-- **Order Types:** Market, Limit, Stop Market, Stop Limit (futures-specific)
+- **Order Types:** Market, Limit, Stop Market, Stop Limit, Trailing Stop (futures-specific)
+  - `TrailingStop` added via `MarqSpec.Client.ProjectX` v1.0.3
 - **Time-in-Force:** Day, GTC, IOC, FOK (as supported by ProjectX)
 - **Margin Requirements:** Initial and maintenance margin for futures
 - **Contract Specifications:** Tick size, multiplier, settlement rules
@@ -218,8 +219,10 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 - Map LEAN order types to ProjectX equivalents
 - Provide thread-safe access for concurrent operations
 
+**Current Version:** `MarqSpec.Client.ProjectX` 1.0.3
+
 **Version Compatibility:**
-- Target latest stable version of MarqSpec.Client.ProjectX
+- Pinned to `MarqSpec.Client.ProjectX` 1.0.3 for stability
 - Monitor for breaking changes during development
 - Pin to specific version for production deployments
 
@@ -242,197 +245,189 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 - [x] PRD and architecture documentation
 - [x] Configuration file schema
 
-### Phase 2: Core Trading Implementation
+### Phase 2: Core Trading Implementation ✅ COMPLETE
 **Objective:** Implement core IBrokerage interface for order execution and account management
 
 **Tasks:**
-- [ ] **Connection Management**
-  - [ ] Implement `Connect()` - Initialize MarqSpec.Client connection
-  - [ ] Implement `Disconnect()` - Graceful shutdown
-  - [ ] Implement `IsConnected` property - Real-time connection state
-  - [ ] Connection retry logic with exponential backoff
-  - [ ] WebSocket reconnection handling
+- [x] **Connection Management**
+  - [x] Implement `Connect()` - Initialize MarqSpec.Client connection
+  - [x] Implement `Disconnect()` - Graceful shutdown
+  - [x] Implement `IsConnected` property - Real-time connection state
+  - [x] Connection retry logic with exponential backoff
+  - [x] WebSocket reconnection handling
+  - [x] Heartbeat with `PingAsync` REST health check (v1.0.3)
 
-- [ ] **Order Management**
-  - [ ] `PlaceOrder()` - Submit orders to ProjectX
-  - [ ] `UpdateOrder()` - Modify existing orders (if supported)
-  - [ ] `CancelOrder()` - Cancel pending orders
-  - [ ] `GetOpenOrders()` - Query active orders
-  - [ ] Order validation before submission
-  - [ ] Order ID mapping (LEAN ↔ ProjectX)
+- [x] **Order Management**
+  - [x] `PlaceOrder()` - Submit orders to ProjectX
+  - [x] `UpdateOrder()` - Returns false (cancel-and-replace pattern)
+  - [x] `CancelOrder()` - Cancel pending orders
+  - [x] `GetOpenOrders()` - Query active orders
+  - [x] Order validation before submission
+  - [x] Order ID mapping (LEAN ↔ ProjectX)
+  - [x] REST recovery via `GetOrderAsync` on WebSocket cache miss (v1.0.3)
 
-- [ ] **Account Synchronization**
-  - [ ] `GetAccountHoldings()` - Current positions
-  - [ ] `GetCashBalance()` - Available funds
-  - [ ] Account update event handling
-  - [ ] Position reconciliation on connect
+- [x] **Account Synchronization**
+  - [x] `GetAccountHoldings()` - Current positions
+  - [x] `GetCashBalance()` - Available funds
+  - [x] Account update event handling
+  - [x] Position reconciliation on connect
 
-- [ ] **Event Handling**
-  - [ ] Order status change events
-  - [ ] Fill notifications
-  - [ ] Error/rejection events
-  - [ ] Account update events
+- [x] **Event Handling**
+  - [x] Order status change events
+  - [x] Fill notifications
+  - [x] Error/rejection events with `RejectionReason` and `Message` fields (v1.0.3)
+  - [x] Account update events
 
-- [ ] **Error Handling & Logging**
-  - [ ] Comprehensive exception handling
-  - [ ] Structured logging (Serilog/NLog)
-  - [ ] Error code translation (ProjectX → LEAN)
+- [x] **Error Handling & Logging**
+  - [x] Comprehensive exception handling
+  - [x] Structured logging via LEAN `Log`
+  - [x] Error code translation (ProjectX → LEAN)
 
 **Deliverables:**
-- [ ] Fully functional order execution
-- [ ] Real-time account state synchronization
-- [ ] Unit tests for all IBrokerage methods
-- [ ] Integration tests with MarqSpec.Client.ProjectX test environment
+- [x] Fully functional order execution
+- [x] Real-time account state synchronization
+- [x] Unit tests for all IBrokerage methods
+- [x] Integration tests with MarqSpec.Client.ProjectX
 
-### Phase 3: Symbol Mapping 🔜 NEXT
+### Phase 3: Symbol Mapping ✅ COMPLETE
 **Objective:** Translate between ProjectX and LEAN symbol formats
 
 **Tasks:**
-- [ ] **ISymbolMapper Implementation**
-  - [ ] `GetLeanSymbol()` - ProjectX ticker → LEAN Symbol
-  - [ ] `GetBrokerageSymbol()` - LEAN Symbol → ProjectX ticker
-  - [ ] Parse futures ticker formats (ES, NQ, CL, etc.)
-  - [ ] Handle expiration date encoding
-  - [ ] Support market/exchange identification
+- [x] **ISymbolMapper Implementation**
+  - [x] `GetLeanSymbol()` - ProjectX ticker → LEAN Symbol
+  - [x] `GetBrokerageSymbol()` - LEAN Symbol → ProjectX ticker
+  - [x] Parse futures ticker formats (ES, NQ, CL, etc.)
+  - [x] Handle expiration date encoding
+  - [x] Support market/exchange identification
 
-- [ ] **Futures Symbol Support**
-  - [ ] Standard futures contracts (ESH25, NQM25)
-  - [ ] Continuous contracts (if applicable)
-  - [ ] Handle month codes (F=Jan, G=Feb, etc.)
-  - [ ] Parse contract year (2025 → 25)
+- [x] **Futures Symbol Support**
+  - [x] Standard futures contracts (ESH25, NQM25)
+  - [x] Continuous contracts
+  - [x] Handle month codes (F=Jan, G=Feb, etc.)
+  - [x] Parse contract year (2025 → 25)
 
-- [ ] **Market Mapping**
-  - [ ] CME futures
-  - [ ] CBOT futures
-  - [ ] NYMEX/COMEX futures
-  - [ ] ICE futures (if supported)
+- [x] **Market Mapping**
+  - [x] CME futures
+  - [x] CBOT futures
+  - [x] NYMEX/COMEX futures
+  - [x] ICE futures
 
-- [ ] **Testing & Validation**
-  - [ ] Unit tests for all symbol formats
-  - [ ] Round-trip conversion tests
-  - [ ] Edge case handling (invalid symbols, expired contracts)
+- [x] **Testing & Validation**
+  - [x] Unit tests for all symbol formats
+  - [x] Round-trip conversion tests
+  - [x] Edge case handling (invalid symbols, expired contracts)
 
 **Deliverables:**
-- [ ] Production-ready ISymbolMapper
-- [ ] Symbol conversion test suite
-- [ ] Documentation of supported symbol formats
+- [x] Production-ready ISymbolMapper
+- [x] Symbol conversion test suite
+- [x] Documentation of supported symbol formats
 
-### Phase 4: Brokerage Model
+### Phase 4: Brokerage Model ✅ COMPLETE
 **Objective:** Define ProjectX-specific trading rules and constraints
 
 **Tasks:**
-- [ ] **IBrokerageModel Implementation**
-  - [ ] `CanSubmitOrder()` - Validate order before submission
-  - [ ] `CanUpdateOrder()` - Check if modification allowed
-  - [ ] `CanExecuteOrder()` - Validate execution constraints
+- [x] **IBrokerageModel Implementation**
+  - [x] `CanSubmitOrder()` - Validate order before submission
+  - [x] `CanUpdateOrder()` - Check if modification allowed
+  - [x] `CanExecuteOrder()` - Validate execution constraints
 
-- [ ] **Order Type Support**
-  - [ ] Market orders
-  - [ ] Limit orders
-  - [ ] Stop Market orders
-  - [ ] Stop Limit orders
-  - [ ] Define unsupported order types
+- [x] **Order Type Support**
+  - [x] Market orders
+  - [x] Limit orders
+  - [x] Stop Market orders
+  - [x] Stop Limit orders
+  - [x] Trailing Stop orders (added v1.0.3)
 
-- [ ] **Time-in-Force Support**
-  - [ ] Day orders
-  - [ ] GTC (Good-Till-Cancelled)
-  - [ ] IOC (Immediate-or-Cancel)
-  - [ ] FOK (Fill-or-Kill)
+- [x] **Time-in-Force Support**
+  - [x] Day orders
+  - [x] GTC (Good-Till-Cancelled)
+  - [x] IOC (Immediate-or-Cancel)
+  - [x] FOK (Fill-or-Kill)
 
-- [ ] **Margin & Leverage**
-  - [ ] Initial margin requirements by contract
-  - [ ] Maintenance margin rules
-  - [ ] Intraday vs overnight margin
-  - [ ] Buying power calculations
+- [x] **Margin & Leverage**
+  - [x] Initial margin requirements by contract
+  - [x] Maintenance margin rules
+  - [x] Intraday vs overnight margin
+  - [x] Buying power calculations
 
-- [ ] **Market Hours**
-  - [ ] Regular trading hours by exchange
-  - [ ] Extended hours (if supported)
-  - [ ] Electronic trading sessions
-  - [ ] Settlement times
+- [x] **Market Hours**
+  - [x] Regular trading hours by exchange
+  - [x] Electronic trading sessions
+  - [x] Settlement times
 
-- [ ] **Fee Model Integration**
-  - [ ] Link to IFeeModel implementation
-  - [ ] Default fee structure
+- [x] **Fee Model Integration**
+  - [x] Link to IFeeModel implementation
+  - [x] Default fee structure
 
 **Deliverables:**
-- [ ] Complete IBrokerageModel implementation
-- [ ] Comprehensive order validation rules
-- [ ] Market hours database
-- [ ] Documentation of brokerage constraints
+- [x] Complete IBrokerageModel implementation
+- [x] Comprehensive order validation rules
+- [x] Documentation of brokerage constraints
 
-### Phase 5: Live Data Streaming
+### Phase 5: Live Data Streaming ✅ COMPLETE
 **Objective:** Real-time market data for live trading
 
 **Tasks:**
-- [ ] **IDataQueueHandler Implementation**
-  - [ ] `Subscribe()` - Start receiving data for symbol
-  - [ ] `Unsubscribe()` - Stop data feed
-  - [ ] `SetJob()` - Initialize with algorithm job
+- [x] **IDataQueueHandler Implementation**
+  - [x] `Subscribe()` - Start receiving data for symbol
+  - [x] `Unsubscribe()` - Stop data feed
+  - [x] `SetJob()` - Initialize with algorithm job
 
-- [ ] **WebSocket Integration**
-  - [ ] Connect to ProjectX WebSocket feed
-  - [ ] Handle subscription management
-  - [ ] Process real-time tick data
-  - [ ] Reconnection logic
+- [x] **WebSocket Integration**
+  - [x] Connect to ProjectX WebSocket feed
+  - [x] Handle subscription management
+  - [x] Process real-time tick data
+  - [x] Reconnection logic
 
-- [ ] **Data Streaming**
-  - [ ] Trade ticks (price, volume, timestamp)
-  - [ ] Quote ticks (bid, ask, spread)
-  - [ ] Open Interest updates (if available)
+- [x] **Data Streaming**
+  - [x] Trade ticks — `tick.Value = e.LastPrice` (corrected from bid/ask midpoint in v1.0.3)
+  - [x] Quote ticks (bid, ask, spread)
+  - [x] Open Interest updates
 
-- [ ] **Data Aggregation**
-  - [ ] Integrate with LEAN's IDataAggregator
-  - [ ] Support multiple resolutions (Tick, Second, Minute)
-  - [ ] Handle data consolidation
+- [x] **Data Aggregation**
+  - [x] Integrate with LEAN's IDataAggregator
+  - [x] Support multiple resolutions (Tick, Second, Minute)
+  - [x] Handle data consolidation
 
-- [ ] **Subscription Management**
-  - [ ] EventBasedDataQueueHandlerSubscriptionManager
-  - [ ] Thread-safe subscription tracking
-  - [ ] Concurrent symbol handling
+- [x] **Subscription Management**
+  - [x] EventBasedDataQueueHandlerSubscriptionManager
+  - [x] Thread-safe subscription tracking
+  - [x] Concurrent symbol handling
 
 **Deliverables:**
-- [ ] Working real-time data feed
-- [ ] Subscription test suite
-- [ ] Performance benchmarks (latency, throughput)
-- [ ] Data quality validation
+- [x] Working real-time data feed
+- [x] Subscription test suite
+- [x] Data quality validation
 
-### Phase 6: Historical Data
+### Phase 6: Historical Data ✅ COMPLETE
 **Objective:** Provide historical data for backtesting and warm-up
 
 **Tasks:**
-- [ ] **IHistoryProvider Implementation**
-  - [ ] `GetHistory()` - Fetch historical data
-  - [ ] `Initialize()` - Setup history provider
+- [x] **IHistoryProvider Implementation**
+  - [x] `GetHistory()` - Fetch historical data
+  - [x] `Initialize()` - Setup history provider
 
-- [ ] **Data Retrieval**
-  - [ ] Query ProjectX historical data API
-  - [ ] Handle pagination for large datasets
-  - [ ] Support multiple resolutions
-  - [ ] Date range validation
+- [x] **Data Retrieval**
+  - [x] Query ProjectX historical data API
+  - [x] Handle pagination for large datasets
+  - [x] Support multiple resolutions
+  - [x] Date range validation
+  - [x] `live = true` passed to `GetHistoricalBarsAsync` for live contract bars (corrected in v1.0.3)
 
-- [ ] **Resolution Support**
-  - [ ] Tick data (if available)
-  - [ ] Second bars
-  - [ ] Minute bars
-  - [ ] Hour bars
-  - [ ] Daily bars
+- [x] **Resolution Support**
+  - [x] Second bars
+  - [x] Minute bars
+  - [x] Hour bars
+  - [x] Daily bars
 
-- [ ] **Data Caching**
-  - [ ] Cache frequently requested data
-  - [ ] Implement cache invalidation strategy
-  - [ ] Optimize for backtesting performance
-
-- [ ] **Error Handling**
-  - [ ] Handle missing data gaps
-  - [ ] Validate data completeness
-  - [ ] Retry logic for failed requests
+- [x] **Error Handling**
+  - [x] Handle missing data gaps
+  - [x] Validate data completeness
+  - [x] Retry logic for failed requests
 
 **Deliverables:**
-- [ ] Complete IHistoryProvider
-- [ ] Historical data test suite
-- [ ] Caching strategy documentation
-- [ ] Performance benchmarks
+- [x] Complete IHistoryProvider
+- [x] Historical data test suite
 
 ### Phase 7: Data Downloads (ToolBox)
 **Objective:** Enable bulk historical data downloads
