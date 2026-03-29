@@ -901,7 +901,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 var services = new ServiceCollection();
                 services.AddLogging();
 
-                var configValues = new Dictionary<string, string?>
+                var configValues = new Dictionary<string, string>
                 {
                     ["ProjectX:ApiKey"] = _apiKey,
                     ["ProjectX:ApiSecret"] = _apiSecret,

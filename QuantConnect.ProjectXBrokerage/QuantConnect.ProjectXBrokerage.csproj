@@ -15,7 +15,6 @@
     <Description>QuantConnect LEAN ProjectXBrokerage: Brokerage ProjectXBrokerage plugin for Lean</Description>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest</AnalysisLevel>
-    <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
