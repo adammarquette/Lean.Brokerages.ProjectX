@@ -7,9 +7,11 @@ on:
     branches: [ master ]
 
 jobs:
+  # ── 1. Only the repo owner may push directly to master ─────────────────────
   check-actor:
     name: Verify Authorized Committer
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Check if actor is authorized
         run: |
@@ -22,3 +24,190 @@ jobs:
           fi
 
           echo "✅ Authorized actor '$ACTOR' — proceeding."
+
+  # ── 2. No unresolved merge-conflict markers ─────────────────────────────────
+  check-merge-conflicts:
+    name: No Merge Conflict Markers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan for conflict markers
+        run: |
+          CONFLICT_MARKERS=$(grep -rn --include="*.cs" --include="*.json" --include="*.md" --include="*.yml" --include="*.yaml" \
+            -e "^<<<<<<< " -e "^=======$" -e "^>>>>>>> " \
+            --exclude-dir=".git" --exclude-dir="bin" --exclude-dir="obj" \
+            . || true)
+
+          if [ -n "$CONFLICT_MARKERS" ]; then
+            echo "::error::❌ Unresolved merge conflict markers found:"
+            echo "$CONFLICT_MARKERS"
+            exit 1
+          fi
+
+          echo "✅ No merge conflict markers found."
+
+  # ── 3. No files larger than 1 MB ───────────────────────────────────────────
+  check-large-files:
+    name: No Large Files (> 1 MB)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for large files in this push
+        run: |
+          MAX_BYTES=1048576  # 1 MB
+
+          # On a PR compare against the base; on a push compare HEAD^ vs HEAD.
+          # Fall back to the empty-tree SHA when there is no parent commit.
+          EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA=$(git rev-parse --verify HEAD^ 2>/dev/null || echo "$EMPTY_TREE")
+          fi
+
+          LARGE_FILES=""
+          while IFS= read -r -d '' file; do
+            SIZE=$(wc -c < "$file")
+            if [ "$SIZE" -gt "$MAX_BYTES" ]; then
+              LARGE_FILES="$LARGE_FILES\n  $file ($(( SIZE / 1024 )) KB)"
+            fi
+          done < <(git diff --name-only "$BASE_SHA" HEAD -- | tr '\n' '\0')
+
+          if [ -n "$LARGE_FILES" ]; then
+            echo "::error::❌ Files exceeding 1 MB detected:$LARGE_FILES"
+            echo "Use Git LFS for large assets instead of committing them directly."
+            exit 1
+          fi
+
+          echo "✅ All changed files are within the 1 MB size limit."
+
+  # ── 4. No sensitive / credential files ─────────────────────────────────────
+  check-sensitive-files:
+    name: No Sensitive Files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for sensitive filenames
+        run: |
+          # Patterns for files that must never be committed to master
+          SENSITIVE_PATTERNS=(
+            "\.env$"
+            "\.env\."
+            "id_rsa$"
+            "id_dsa$"
+            "id_ecdsa$"
+            "id_ed25519$"
+            "\.pem$"
+            "\.pfx$"
+            "\.p12$"
+            "\.key$"
+            "\.keystore$"
+            "\.jks$"
+            "secrets\.json$"
+            "appsettings\.Production\.json$"
+            "credentials\.json$"
+            "serviceaccount\.json$"
+            "\.htpasswd$"
+          )
+
+          # Fall back to the empty-tree SHA when there is no parent commit.
+          EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA=$(git rev-parse --verify HEAD^ 2>/dev/null || echo "$EMPTY_TREE")
+          fi
+
+          FOUND=""
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" HEAD --)
+
+          for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+            MATCHES=$(echo "$CHANGED_FILES" | grep -Ei "$pattern" || true)
+            if [ -n "$MATCHES" ]; then
+              FOUND="$FOUND\n  $MATCHES  (matched: $pattern)"
+            fi
+          done
+
+          if [ -n "$FOUND" ]; then
+            echo "::error::❌ Potentially sensitive files detected in this push:$FOUND"
+            echo "Remove these files, rotate any exposed credentials, and add them to .gitignore."
+            exit 1
+          fi
+
+          echo "✅ No sensitive filenames detected."
+
+  # ── 5. Commit message hygiene ───────────────────────────────────────────────
+  check-commit-messages:
+    name: Commit Message Hygiene
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages
+        run: |
+          # Reject messages that are clearly throwaway / work-in-progress
+          WIP_PATTERN="^(wip|WIP|fixup!|squash!|temp|tmp|test|asdf|xxx|\.\.\.)[[:space:].!]*$"
+          MIN_LENGTH=10
+
+          # Fall back to the empty-tree SHA when there is no parent commit.
+          EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA=$(git rev-parse --verify HEAD^ 2>/dev/null || echo "$EMPTY_TREE")
+          fi
+
+          FAILED=0
+          while IFS= read -r sha; do
+            MSG=$(git log --format="%s" -n 1 "$sha")
+
+            # Reject empty subjects
+            if [ -z "$MSG" ]; then
+              echo "::error::❌ Commit $sha has an empty subject line."
+              FAILED=1
+              continue
+            fi
+
+            # Reject WIP / throwaway subjects
+            if echo "$MSG" | grep -Eiq "$WIP_PATTERN"; then
+              echo "::error::❌ Commit $sha has a WIP/throwaway message: '$MSG'"
+              FAILED=1
+              continue
+            fi
+
+            # Reject very short subjects
+            if [ "${#MSG}" -lt "$MIN_LENGTH" ]; then
+              echo "::error::❌ Commit $sha subject is too short (${#MSG} chars): '$MSG'"
+              FAILED=1
+              continue
+            fi
+
+            echo "✅ $sha — '$MSG'"
+          done < <(git log --format="%H" "$BASE_SHA"..HEAD)
+
+          if [ "$FAILED" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "✅ All commit messages look good."
