@@ -96,6 +96,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         private ServiceProvider _serviceProvider;
         private int _accountId;
         private string _baseUrl;
+        private IOrderProvider _orderProvider;
+        private ISecurityProvider _securityProvider;
 
         /// <summary>
         /// Returns true if we're currently connected to the broker
@@ -181,6 +183,41 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             // _connectionRateLimiter = new RateGate();
 
             Log.Trace("ProjectXBrokerage(): Initialization complete");
+        }
+
+        /// <summary>
+        /// Creates a new instance of the ProjectXBrokerage for testing purposes
+        /// </summary>
+        internal ProjectXBrokerage(
+            IProjectXApiClient apiClient,
+            IProjectXWebSocketClient wsClient,
+            ProjectXSymbolMapper symbolMapper,
+            IOrderProvider orderProvider,
+            ISecurityProvider securityProvider,
+            IDataAggregator aggregator)
+            : base("ProjectXBrokerage")
+        {
+            _apiClient = apiClient;
+            _wsClient = wsClient;
+            _symbolMapper = symbolMapper;
+            _aggregator = aggregator;
+
+            // Initialize other necessary fields
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
+            _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
+            _connectionCts = new CancellationTokenSource();
+            _isConnected = true; // Assume connected for tests
+
+            // Set providers
+            _orderProvider = orderProvider;
+            _securityProvider = securityProvider;
+
+            // Wire up WebSocket events for testing
+            _wsClient.ConnectionStatusChanged += OnConnectionStatusChanged;
+            _wsClient.OrderUpdateReceived += OnOrderUpdateReceived;
+            _wsClient.PriceUpdateReceived += OnPriceUpdateReceived;
+            _wsClient.TradeUpdateReceived += OnTradeUpdateReceived;
         }
 
         #region Brokerage
@@ -529,21 +566,34 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 return;
             }
 
-            // Validate configuration
-            ValidateConfiguration();
-
-            // Attempt connection with retry logic
-            var connected = ConnectWithRetry();
-
-            if (!connected)
+            _connectionSemaphore.Wait();
+            try
             {
-                var message = $"ProjectXBrokerage.Connect(): Failed to connect after {_maxReconnectAttempts} attempts";
-                Log.Error(message);
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CONNECTION_FAILED", message));
-                throw new Exception(message);
-            }
+                if (IsConnected)
+                {
+                    return;
+                }
 
-            Log.Trace("ProjectXBrokerage.Connect(): Successfully connected to ProjectX");
+                // Validate configuration
+                ValidateConfiguration();
+
+                // Attempt connection with retry logic
+                var connected = ConnectWithRetry();
+
+                if (!connected)
+                {
+                    var message = $"ProjectXBrokerage.Connect(): Failed to connect after {_maxReconnectAttempts} attempts";
+                    Log.Error(message);
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CONNECTION_FAILED", message));
+                    throw new Exception(message);
+                }
+
+                Log.Trace("ProjectXBrokerage.Connect(): Successfully connected to ProjectX");
+            }
+            finally
+            {
+                _connectionSemaphore.Release();
+            }
         }
 
         /// <summary>
@@ -559,8 +609,14 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 return;
             }
 
+            _connectionSemaphore.Wait();
             try
             {
+                if (!IsConnected)
+                {
+                    return;
+                }
+
                 // Update connection state first to stop heartbeat loop
                 lock (_connectionLock)
                 {
@@ -608,6 +664,10 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 }
 
                 // Don't throw - disconnection should always succeed
+            }
+            finally
+            {
+                _connectionSemaphore.Release();
             }
         }
 
@@ -681,6 +741,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     unit,
                     1,
                     limit,
+                    false,
                     false,
                     CancellationToken.None
                 ).GetAwaiter().GetResult();
@@ -873,7 +934,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 }
 
                 // Subscribe to real-time order updates for this account
-                SubscribeToAccountUpdates();
+                SubscribeToOrderUpdates();
 
                 // Reconcile any positions that existed before this session
                 ReconcilePositions();
@@ -1009,13 +1070,28 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     Log.Trace("ProjectXBrokerage.HandleReconnection(): Reconnection successful");
                     OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Information, "RECONNECTED", "Successfully reconnected to ProjectX"));
 
-                    // Resubscribe to account updates
-                    SubscribeToAccountUpdates();
+                    // Resubscribe to order updates
+                    SubscribeToOrderUpdates();
 
                     // Resync account state
                     ReconcilePositions();
 
-                    // TODO: Resubscribe to data feeds
+                    // Resubscribe to all active market data feeds
+                    var contractsToResubscribe = _subscribedContractIds.Keys.ToList();
+                    Log.Debug($"ProjectXBrokerage.HandleReconnection(): Resubscribing to {contractsToResubscribe.Count} market data feed(s)");
+                    foreach (var contractId in contractsToResubscribe)
+                    {
+                        try
+                        {
+                            _wsClient.SubscribeToPriceUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                            _wsClient.SubscribeToTradeUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                            Log.Trace($"ProjectXBrokerage.HandleReconnection(): Resubscribed to {contractId}");
+                        }
+                        catch (Exception resubEx)
+                        {
+                            Log.Error(resubEx, $"ProjectXBrokerage.HandleReconnection(): Failed to resubscribe to {contractId}");
+                        }
+                    }
                 }
                 else
                 {
@@ -1099,76 +1175,21 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         }
 
         /// <summary>
-        /// Handles account update events from ProjectX WebSocket
+        /// Subscribes to account order update events via WebSocket
         /// </summary>
-        /// <param name="accountUpdate">The account update object from ProjectX</param>
-        private void HandleAccountUpdate(object accountUpdate)
+        private void SubscribeToOrderUpdates()
         {
             try
             {
-                // TODO: Replace with actual MarqSpec.Client.ProjectX types when available
-                // Example implementation:
-                //
-                // var update = (ProjectXAccountUpdate)accountUpdate;
-                //
-                // Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Received account update - Type: {update.UpdateType}");
-                //
-                // switch (update.UpdateType)
-                // {
-                //     case AccountUpdateType.Balance:
-                //         // Balance changed
-                //         if (update.AvailableCash.HasValue)
-                //         {
-                //             var currency = string.IsNullOrEmpty(update.Currency) ? "USD" : update.Currency;
-                //             OnAccountChanged(new AccountEvent(currency, update.AvailableCash.Value));
-                //             Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Balance updated - {update.AvailableCash.Value} {currency}");
-                //         }
-                //         break;
-                //
-                //     case AccountUpdateType.Position:
-                //         // Position changed
-                //         if (update.Position != null)
-                //         {
-                //             var holding = ConvertFromProjectXPosition(update.Position);
-                //             // Cache updated position
-                //             Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Position updated - {holding.Symbol}: {holding.Quantity}");
-                //         }
-                //         break;
-                //
-                //     case AccountUpdateType.RealizedPnL:
-                //         // Realized P&L from closed position
-                //         Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Realized P&L - {update.RealizedPnL}");
-                //         break;
-                //
-                //     default:
-                //         Log.Debug($"ProjectXBrokerage.HandleAccountUpdate(): Unknown update type: {update.UpdateType}");
-                //         break;
-                // }
-
-                Log.Trace("ProjectXBrokerage.HandleAccountUpdate(): MarqSpec.Client.ProjectX integration pending");
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "ProjectXBrokerage.HandleAccountUpdate(): Error handling account update");
-            }
-        }
-
-        /// <summary>
-        /// Subscribes to account update events via WebSocket
-        /// </summary>
-        private void SubscribeToAccountUpdates()
-        {
-            try
-            {
-                Log.Debug("ProjectXBrokerage.SubscribeToAccountUpdates(): Subscribing to account order updates");
+                Log.Debug("ProjectXBrokerage.SubscribeToOrderUpdates(): Subscribing to account order updates");
 
                 _wsClient.SubscribeToOrderUpdatesAsync(_accountId, _connectionCts.Token).GetAwaiter().GetResult();
 
-                Log.Trace("ProjectXBrokerage.SubscribeToAccountUpdates(): Successfully subscribed to account order updates");
+                Log.Trace("ProjectXBrokerage.SubscribeToOrderUpdates(): Successfully subscribed to account order updates");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "ProjectXBrokerage.SubscribeToAccountUpdates(): Error subscribing to account updates");
+                Log.Error(ex, "ProjectXBrokerage.SubscribeToOrderUpdates(): Error subscribing to account updates");
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "ACCOUNT_SUBSCRIPTION_ERROR",
                     $"Error subscribing to account updates: {ex.Message}"));
             }
@@ -1538,7 +1559,10 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
                 if (!_ordersCache.TryGetValue(e.OrderId, out var order))
                 {
-                    Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): No cached LEAN order for ProjectX ID={e.OrderId}");
+                    // The update event arrived before PlaceOrder completed or is from a different session.
+                    // The ProjectX API does not provide a CustomTag field on OrderUpdate, so we cannot
+                    // correlate this update to a LEAN order without the cache entry.
+                    Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): No cached LEAN order for ProjectX ID={e.OrderId}. This may be an order from a different session.");
                     return;
                 }
 
@@ -1627,8 +1651,9 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 {
                     _wsClient.ConnectionStatusChanged -= OnConnectionStatusChanged;
                     _wsClient.OrderUpdateReceived -= OnOrderUpdateReceived;
+                    _wsClient.PriceUpdateReceived -= OnPriceUpdateReceived;
+                    _wsClient.TradeUpdateReceived -= OnTradeUpdateReceived;
                 }
-
                 _serviceProvider?.Dispose();
                 _serviceProvider = null;
                 _apiClient = null;

@@ -63,6 +63,9 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             new TestCaseData(Symbol.CreateFuture("ES",  Market.CME,   new DateTime(2025, 8, 15)), "ESQ25"),
             new TestCaseData(Symbol.CreateFuture("ES",  Market.CME,   new DateTime(2025, 10, 17)), "ESV25"),
             new TestCaseData(Symbol.CreateFuture("ES",  Market.CME,   new DateTime(2025, 11, 21)), "ESX25"),
+            
+            // Continuous futures
+            new TestCaseData(Symbol.Create("ES", SecurityType.Future, Market.CME), "ES"),
         };
 
         [Test, TestCaseSource(nameof(GetBrokerageSymbolCases))]
@@ -110,6 +113,10 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 
             // ICE futures
             new TestCaseData("BRNM25", SecurityType.Future, Market.ICE,   "BRN", Market.ICE,   ProjectXSymbolMapper.GetThirdFriday(2025, 6)),
+            new TestCaseData("GH25",   SecurityType.Future, Market.ICE,   "G",   Market.ICE,   ProjectXSymbolMapper.GetThirdFriday(2025, 3)),
+
+            // 20th century future
+            new TestCaseData("ESH99",  SecurityType.Future, Market.CME,   "ES",  Market.CME,   ProjectXSymbolMapper.GetThirdFriday(2099, 3)),
         };
 
         [Test, TestCaseSource(nameof(GetLeanSymbolCases))]
@@ -127,6 +134,26 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.That(result.ID.Market,        Is.EqualTo(expectedMarket));
             Assert.That(result.ID.Date,          Is.EqualTo(expectedExpiry));
             Assert.That(result.SecurityType,     Is.EqualTo(SecurityType.Future));
+        }
+
+        [Test]
+        public void GetLeanSymbol_ContinuousFuture_ReturnsCorrectSymbol()
+        {
+            var result = _mapper.GetLeanSymbol("ES", SecurityType.Future, Market.CME);
+
+            Assert.That(result.ID.Symbol, Is.EqualTo("ES"));
+            Assert.That(result.ID.Market, Is.EqualTo(Market.CME));
+            Assert.That(result.IsCanonical(), Is.True);
+        }
+
+        [Test]
+        public void GetLeanSymbol_ShortContinuousFuture_ReturnsCorrectSymbol()
+        {
+            var result = _mapper.GetLeanSymbol("G", SecurityType.Future, Market.ICE);
+
+            Assert.That(result.ID.Symbol, Is.EqualTo("G"));
+            Assert.That(result.ID.Market, Is.EqualTo(Market.ICE));
+            Assert.That(result.IsCanonical(), Is.True);
         }
 
         [Test]
@@ -197,6 +224,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             new TestCaseData("GCJ25",  Market.NYMEX),
             new TestCaseData("BRNM25", Market.ICE),
             new TestCaseData("MESH25", Market.CME),
+            new TestCaseData("ES",     Market.CME),
         };
 
         [Test, TestCaseSource(nameof(RoundTripCases))]

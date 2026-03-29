@@ -14,11 +14,13 @@
 */
 
 using System;
+using QuantConnect.Data;
 using QuantConnect.Packets;
 using QuantConnect.Brokerages;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Logging;
+using QuantConnect.Util;
 using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
@@ -58,8 +60,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override IBrokerageModel GetBrokerageModel(IOrderProvider orderProvider)
         {
             Log.Trace("ProjectXBrokerageFactory.GetBrokerageModel(): Creating brokerage model");
-            // Replace with actual model once Phase 4 is reached, or return a default placeholder
-            return new DefaultBrokerageModel(); 
+            return new ProjectXBrokerageModel(); 
         }
 
         /// <summary>
