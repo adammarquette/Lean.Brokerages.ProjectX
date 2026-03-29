@@ -18,12 +18,13 @@ using System.Reflection;
 using NUnit.Framework;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
     /// <summary>
-    /// Unit tests for order validation logic
-    /// Tests ValidateOrder method with various order scenarios
+    /// Unit tests for the private ValidateOrder method, exercised via reflection.
+    /// No API credentials or network access required.
     /// </summary>
     [TestFixture]
     public class ProjectXBrokerageOrderValidationTests
@@ -32,258 +33,219 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
         private Symbol _testSymbol;
 
         [SetUp]
-        public void Setup()
+        public void SetUp()
         {
-            // TODO: Initialize brokerage with test configuration
-            // _brokerage = new ProjectXBrokerage(new TestDataAggregator());
-            // _testSymbol = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
+            Config.Set("brokerage-project-x-api-key", "unit-test-key");
+            Config.Set("brokerage-project-x-api-secret", "unit-test-secret");
+            Config.Set("brokerage-project-x-environment", "sandbox");
+            _brokerage = new ProjectXBrokerage(new TestDataAggregator());
+            _testSymbol = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
         }
 
         [TearDown]
         public void TearDown()
         {
+            Config.Reset();
             _brokerage?.Dispose();
         }
 
-        #region Order Type Validation
+        // ── Reflection helpers ──────────────────────────────────────────────────
 
-        [Test, Category("Unit")]
-        public void ValidateOrder_MarketOrder_ReturnsTrue()
+        private bool InvokeValidateOrder(Order order, out string errorMessage)
         {
-            Assert.Ignore("TODO: Implement test using reflection to access ValidateOrder");
-            
-            // Arrange
-            // _brokerage.Connect();
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            
-            // Act
-            // var validateMethod = typeof(ProjectXBrokerage).GetMethod("ValidateOrder",
-            //     BindingFlags.NonPublic | BindingFlags.Instance);
-            // var result = (bool)validateMethod.Invoke(_brokerage, new object[] { order, null });
-            
-            // Assert
-            // Assert.IsTrue(result);
+            var method = typeof(ProjectXBrokerage).GetMethod(
+                "ValidateOrder", BindingFlags.NonPublic | BindingFlags.Instance);
+            var args = new object[] { order, null };
+            var result = (bool)method.Invoke(_brokerage, args);
+            errorMessage = (string)args[1];
+            return result;
         }
 
-        [Test, Category("Unit")]
-        public void ValidateOrder_LimitOrder_ReturnsTrue()
+        private void SetConnected(bool connected) =>
+            typeof(ProjectXBrokerage)
+                .GetField("_isConnected", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(_brokerage, connected);
+
+        // ── Connection state ─────────────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_WhenNotConnected_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test using reflection to access ValidateOrder");
-            
-            // Arrange
-            // _brokerage.Connect();
-            // var order = new LimitOrder(_testSymbol, 1, 4500m, DateTime.UtcNow);
-            
-            // Act & Assert
-            // Test that limit orders with valid limit price pass validation
+            var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
+
+            var result = InvokeValidateOrder(order, out var error);
+
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("Not connected").Or.Contain("not connected"));
         }
 
-        [Test, Category("Unit")]
-        public void ValidateOrder_StopMarketOrder_ReturnsTrue()
+        [Test]
+        public void ValidateOrder_WhenConnected_AllowsValidOrder()
         {
-            Assert.Ignore("TODO: Implement test using reflection to access ValidateOrder");
-            
-            // Arrange
-            // _brokerage.Connect();
-            // var order = new StopMarketOrder(_testSymbol, 1, 4500m, DateTime.UtcNow);
-            
-            // Act & Assert
-            // Test that stop market orders with valid stop price pass validation
+            SetConnected(true);
+            var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
+
+            Assert.IsTrue(InvokeValidateOrder(order, out _));
         }
 
-        [Test, Category("Unit")]
-        public void ValidateOrder_StopLimitOrder_ReturnsTrue()
-        {
-            Assert.Ignore("TODO: Implement test using reflection to access ValidateOrder");
-            
-            // Arrange
-            // _brokerage.Connect();
-            // var order = new StopLimitOrder(_testSymbol, 1, 4500m, 4505m, DateTime.UtcNow);
-            
-            // Act & Assert
-            // Test that stop limit orders with valid prices pass validation
-        }
+        // ── Null / missing input ─────────────────────────────────────────────────
 
-        [Test, Category("Unit")]
-        public void ValidateOrder_UnsupportedOrderType_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for unsupported order types");
-            
-            // Test that MarketOnOpen, MarketOnClose, OptionExercise, etc. are rejected
-        }
-
-        #endregion
-
-        #region Price Validation
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_LimitOrderWithZeroPrice_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for invalid limit price");
-            
-            // Arrange
-            // _brokerage.Connect();
-            // var order = new LimitOrder(_testSymbol, 1, 0m, DateTime.UtcNow);
-            
-            // Act
-            // string errorMessage;
-            // var result = ValidateOrderViaReflection(order, out errorMessage);
-            
-            // Assert
-            // Assert.IsFalse(result);
-            // Assert.That(errorMessage, Contains.Substring("limit price"));
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_StopOrderWithZeroPrice_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for invalid stop price");
-            
-            // Test that stop orders with stop price <= 0 are rejected
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_NegativeLimitPrice_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for negative prices");
-            
-            // Test that negative prices are rejected
-        }
-
-        #endregion
-
-        #region Quantity Validation
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_ZeroQuantity_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for zero quantity");
-            
-            // Arrange
-            // _brokerage.Connect();
-            // var order = new MarketOrder(_testSymbol, 0, DateTime.UtcNow);
-            
-            // Act
-            // string errorMessage;
-            // var result = ValidateOrderViaReflection(order, out errorMessage);
-            
-            // Assert
-            // Assert.IsFalse(result);
-            // Assert.That(errorMessage, Contains.Substring("quantity"));
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_PositiveQuantity_ReturnsTrue()
-        {
-            Assert.Ignore("TODO: Implement test for valid positive quantity");
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_NegativeQuantity_ReturnsTrue()
-        {
-            Assert.Ignore("TODO: Implement test for valid short position (negative quantity)");
-            
-            // Short positions should be allowed with negative quantity
-        }
-
-        #endregion
-
-        #region Symbol Validation
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_NullSymbol_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for null symbol");
-            
-            // Test that orders with null symbol are rejected
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_EmptySymbol_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for empty symbol");
-            
-            // Test that orders with empty symbol value are rejected
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_UniverseSymbol_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for universe symbols");
-            
-            // Test that universe symbols cannot be traded
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_CanonicalSymbol_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for canonical symbols");
-            
-            // Test that canonical symbols (e.g., ES without expiration) are rejected
-        }
-
-        #endregion
-
-        #region Connection State Validation
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_NotConnected_ReturnsFalse()
-        {
-            Assert.Ignore("TODO: Implement test for disconnected state");
-            
-            // Arrange
-            // _brokerage.Disconnect();
-            // var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
-            
-            // Act
-            // string errorMessage;
-            // var result = ValidateOrderViaReflection(order, out errorMessage);
-            
-            // Assert
-            // Assert.IsFalse(result);
-            // Assert.That(errorMessage, Contains.Substring("not connected"));
-        }
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_Connected_AllowsValidation()
-        {
-            Assert.Ignore("TODO: Implement test for connected state");
-            
-            // Test that validation proceeds when connected
-        }
-
-        #endregion
-
-        #region Null/Invalid Input Tests
-
-        [Test, Category("Unit")]
+        [Test]
         public void ValidateOrder_NullOrder_ReturnsFalse()
         {
-            Assert.Ignore("TODO: Implement test for null order");
-            
-            // Test that null order parameter is handled gracefully
+            SetConnected(true);
+
+            var result = InvokeValidateOrder(null, out var error);
+
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("null").Or.Contain("cannot be null"));
         }
 
-        [Test, Category("Unit")]
-        public void ValidateOrder_ThrowsException_ReturnsFalse()
+        // ── Supported order types ────────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_MarketOrder_ReturnsTrue()
         {
-            Assert.Ignore("TODO: Implement test for exception handling");
-            
-            // Test that exceptions during validation are caught and return false
+            SetConnected(true);
+            Assert.IsTrue(InvokeValidateOrder(new MarketOrder(_testSymbol, 1, DateTime.UtcNow), out _));
         }
 
-        #endregion
-
-        #region Error Message Tests
-
-        [Test, Category("Unit")]
-        public void ValidateOrder_ProducesDescriptiveErrorMessages()
+        [Test]
+        public void ValidateOrder_LimitOrder_WithValidPrice_ReturnsTrue()
         {
-            Assert.Ignore("TODO: Implement test for error message quality");
-            
-            // Test that validation failures produce clear, actionable error messages
+            SetConnected(true);
+            Assert.IsTrue(InvokeValidateOrder(new LimitOrder(_testSymbol, 1, 4500m, DateTime.UtcNow), out _));
         }
 
-        #endregion
+        [Test]
+        public void ValidateOrder_StopMarketOrder_WithValidStop_ReturnsTrue()
+        {
+            SetConnected(true);
+            Assert.IsTrue(InvokeValidateOrder(new StopMarketOrder(_testSymbol, 1, 4500m, DateTime.UtcNow), out _));
+        }
+
+        [Test]
+        public void ValidateOrder_StopLimitOrder_WithValidPrices_ReturnsTrue()
+        {
+            SetConnected(true);
+            Assert.IsTrue(InvokeValidateOrder(new StopLimitOrder(_testSymbol, 1, 4490m, 4500m, DateTime.UtcNow), out _));
+        }
+
+        // ── Unsupported order types ──────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_MarketOnOpenOrder_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new MarketOnOpenOrder(_testSymbol, 1, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("not supported"));
+        }
+
+        [Test]
+        public void ValidateOrder_MarketOnCloseOrder_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new MarketOnCloseOrder(_testSymbol, 1, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("not supported"));
+        }
+
+        [Test]
+        public void ValidateOrder_LimitIfTouchedOrder_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new LimitIfTouchedOrder(_testSymbol, 1, 4490m, 4500m, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("not supported"));
+        }
+
+        // ── Price validation ─────────────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_LimitOrder_WithZeroPrice_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new LimitOrder(_testSymbol, 1, 0m, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("Limit price").Or.Contain("limit price"));
+        }
+
+        [Test]
+        public void ValidateOrder_LimitOrder_WithNegativePrice_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new LimitOrder(_testSymbol, 1, -100m, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("Limit price").Or.Contain("limit price"));
+        }
+
+        [Test]
+        public void ValidateOrder_StopMarketOrder_WithZeroStop_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new StopMarketOrder(_testSymbol, 1, 0m, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("Stop price").Or.Contain("stop price"));
+        }
+
+        // ── Quantity validation ──────────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_ZeroQuantity_ReturnsFalse()
+        {
+            SetConnected(true);
+            var result = InvokeValidateOrder(new MarketOrder(_testSymbol, 0, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("quantity").Or.Contain("Quantity"));
+        }
+
+        [Test]
+        public void ValidateOrder_PositiveQuantity_Buy_ReturnsTrue()
+        {
+            SetConnected(true);
+            Assert.IsTrue(InvokeValidateOrder(new MarketOrder(_testSymbol, 5, DateTime.UtcNow), out _));
+        }
+
+        [Test]
+        public void ValidateOrder_NegativeQuantity_Sell_ReturnsTrue()
+        {
+            SetConnected(true);
+            Assert.IsTrue(InvokeValidateOrder(new MarketOrder(_testSymbol, -3, DateTime.UtcNow), out _));
+        }
+
+        // ── Symbol validation ────────────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_EquitySymbol_ReturnsFalse()
+        {
+            SetConnected(true);
+            var equity = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
+            var result = InvokeValidateOrder(new MarketOrder(equity, 1, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("not supported"));
+        }
+
+        [Test]
+        public void ValidateOrder_CanonicalFutureSymbol_ReturnsFalse()
+        {
+            SetConnected(true);
+            // Canonical = no expiry date; IsCanonical() returns true → CanSubscribe = false
+            var canonical = Symbol.Create("ES", SecurityType.Future, Market.CME);
+            var result = InvokeValidateOrder(new MarketOrder(canonical, 1, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("not supported"));
+        }
+
+        [Test]
+        public void ValidateOrder_UniverseSymbol_ReturnsFalse()
+        {
+            SetConnected(true);
+            // "universe" in the symbol value → CanSubscribe returns false
+            var universe = Symbol.CreateFuture("ES.universe", Market.CME, new DateTime(2025, 3, 21));
+            var result = InvokeValidateOrder(new MarketOrder(universe, 1, DateTime.UtcNow), out var error);
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("not supported"));
+        }
     }
 }
