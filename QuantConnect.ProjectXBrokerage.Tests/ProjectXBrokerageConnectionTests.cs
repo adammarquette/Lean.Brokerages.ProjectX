@@ -38,6 +38,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Set("brokerage-project-x-reconnect-attempts", "3");
             Config.Set("brokerage-project-x-reconnect-delay", "100");
             Config.Set("brokerage-project-x-connection-timeout", "5000");
+            Config.Set("brokerage-project-x-account-id", "12345");
 
             _aggregator = new TestDataAggregator();
         }
@@ -235,6 +236,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Reset();
             Config.Set("brokerage-project-x-api-key", "test-key");
             Config.Set("brokerage-project-x-api-secret", "test-secret");
+            Config.Set("brokerage-project-x-account-id", "12345");
             // Don't set optional values, let defaults apply
 
             // Act
@@ -282,6 +284,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Reset();
             Config.Set("brokerage-project-x-api-key", "test-key");
             Config.Set("brokerage-project-x-api-secret", "test-secret");
+            Config.Set("brokerage-project-x-account-id", "12345");
             Config.Set("brokerage-project-x-reconnect-attempts", "25");
             var brokerage2 = new ProjectXBrokerage(_aggregator);
 
