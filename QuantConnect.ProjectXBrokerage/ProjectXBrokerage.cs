@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -45,6 +45,11 @@ using PxOrderSide = MarqSpec.Client.ProjectX.Api.Models.OrderSide;
 using PxPosition = MarqSpec.Client.ProjectX.Api.Models.Position;
 using PxPositionType = MarqSpec.Client.ProjectX.Api.Models.PositionType;
 using PxAccount = MarqSpec.Client.ProjectX.Api.Models.TradingAccount;
+using PxPriceUpdate = MarqSpec.Client.ProjectX.Api.Models.PriceUpdate;
+using PxTradeUpdate = MarqSpec.Client.ProjectX.Api.Models.TradeUpdate;
+using PxAggregateBar = MarqSpec.Client.ProjectX.Api.Models.AggregateBar;
+using PxAggregateBarUnit = MarqSpec.Client.ProjectX.Api.Models.AggregateBarUnit;
+using QuantConnect.Data.Market;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
 {
@@ -65,6 +70,9 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         private readonly ConcurrentDictionary<long, int> _projectXToLeanOrderIds = new ConcurrentDictionary<long, int>();
         private readonly ConcurrentDictionary<long, Order> _ordersCache = new ConcurrentDictionary<long, Order>();
         private readonly object _orderMappingLock = new object();
+
+        // Market data subscription tracking - maps ProjectX contractId to LEAN Symbol
+        private readonly ConcurrentDictionary<string, Symbol> _subscribedContractIds = new ConcurrentDictionary<string, Symbol>();
 
         // Recently submitted orders for duplicate detection (OrderId -> submission time)
         private readonly ConcurrentDictionary<int, DateTime> _recentlySubmittedOrders = new ConcurrentDictionary<int, DateTime>();
@@ -639,7 +647,40 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
         {
             Log.Trace($"ProjectXBrokerage.LookupSymbols(): Looking up symbols for {symbol}, IncludeExpired: {includeExpired}");
-            throw new NotImplementedException("ProjectXBrokerage.LookupSymbols(): Implementation pending Phase 2");
+            try
+            {
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.LookupSymbols(): Not connected to ProjectX");
+                    return Enumerable.Empty<Symbol>();
+                }
+
+                var root = symbol.ID.Symbol;
+                // live=true returns only active contracts; live=false includes expired contracts
+                var contracts = _apiClient.SearchContractsAsync(root, !includeExpired, CancellationToken.None).GetAwaiter().GetResult();
+
+                var symbols = new List<Symbol>();
+                foreach (var contract in contracts)
+                {
+                    try
+                    {
+                        var leanSymbol = _symbolMapper.GetLeanSymbol(contract.Id, SecurityType.Future, string.Empty);
+                        symbols.Add(leanSymbol);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, $"ProjectXBrokerage.LookupSymbols(): Failed to map contract {contract.Id}");
+                    }
+                }
+
+                Log.Debug($"ProjectXBrokerage.LookupSymbols(): Found {symbols.Count} symbol(s) for {root}");
+                return symbols;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.LookupSymbols(): Error looking up symbols for {symbol}");
+                return Enumerable.Empty<Symbol>();
+            }
         }
 
         /// <summary>
@@ -673,7 +714,31 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         {
             var symbolList = symbols?.ToList() ?? new List<Symbol>();
             Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {symbolList.Count} symbols");
-            throw new NotImplementedException("ProjectXBrokerage.Subscribe(): Implementation pending Phase 5");
+            if (_wsClient == null)
+            {
+                Log.Error("ProjectXBrokerage.Subscribe(): WebSocket client not initialized");
+                return false;
+            }
+
+            var success = true;
+            foreach (var symbol in symbolList)
+            {
+                try
+                {
+                    var contractId = _symbolMapper.GetBrokerageSymbol(symbol);
+                    _wsClient.SubscribeToPriceUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                    _wsClient.SubscribeToTradeUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                    _subscribedContractIds[contractId] = symbol;
+                    Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribed to {contractId} ({symbol})");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, $"ProjectXBrokerage.Subscribe(): Error subscribing to {symbol}");
+                    success = false;
+                }
+            }
+
+            return success;
         }
 
         /// <summary>
@@ -684,7 +749,31 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         {
             var symbolList = symbols?.ToList() ?? new List<Symbol>();
             Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {symbolList.Count} symbols");
-            throw new NotImplementedException("ProjectXBrokerage.Unsubscribe(): Implementation pending Phase 5");
+            if (_wsClient == null)
+            {
+                Log.Debug("ProjectXBrokerage.Unsubscribe(): WebSocket client not initialized, skipping");
+                return true;
+            }
+
+            var success = true;
+            foreach (var symbol in symbolList)
+            {
+                try
+                {
+                    var contractId = _symbolMapper.GetBrokerageSymbol(symbol);
+                    _wsClient.UnsubscribeFromPriceUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                    _wsClient.UnsubscribeFromTradeUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                    _subscribedContractIds.TryRemove(contractId, out _);
+                    Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribed from {contractId} ({symbol})");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, $"ProjectXBrokerage.Unsubscribe(): Error unsubscribing from {symbol}");
+                    success = false;
+                }
+            }
+
+            return success;
         }
 
         /// <summary>
@@ -698,11 +787,83 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             if (!CanSubscribe(request.Symbol))
             {
                 Log.Trace($"ProjectXBrokerage.GetHistory(): Cannot subscribe to {request.Symbol}");
-                return null; // Should consistently return null instead of an empty enumerable
+                return null;
             }
 
             Log.Trace($"ProjectXBrokerage.GetHistory(): Requesting history for {request.Symbol}, Start: {request.StartTimeUtc}, End: {request.EndTimeUtc}, Resolution: {request.Resolution}");
-            throw new NotImplementedException("ProjectXBrokerage.GetHistory(): Implementation pending Phase 6");
+            if (request.Resolution == Resolution.Tick)
+            {
+                Log.Trace($"ProjectXBrokerage.GetHistory(): Tick resolution is not supported by the ProjectX API. Symbol: {request.Symbol}");
+                return null;
+            }
+
+            try
+            {
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetHistory(): Not connected to ProjectX");
+                    return null;
+                }
+
+                var contractId = _symbolMapper.GetBrokerageSymbol(request.Symbol);
+
+                PxAggregateBarUnit unit;
+                int limit;
+                switch (request.Resolution)
+                {
+                    case Resolution.Second:
+                        unit = PxAggregateBarUnit.Second;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalSeconds) + 1;
+                        break;
+                    case Resolution.Minute:
+                        unit = PxAggregateBarUnit.Minute;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalMinutes) + 1;
+                        break;
+                    case Resolution.Hour:
+                        unit = PxAggregateBarUnit.Hour;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalHours) + 1;
+                        break;
+                    case Resolution.Daily:
+                        unit = PxAggregateBarUnit.Day;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalDays) + 1;
+                        break;
+                    default:
+                        Log.Trace($"ProjectXBrokerage.GetHistory(): Resolution {request.Resolution} is not supported");
+                        return null;
+                }
+
+                // Cap at a reasonable maximum to avoid excessive API calls
+                limit = Math.Min(limit, 10000);
+
+                var bars = _apiClient.GetHistoricalBarsAsync(
+                    contractId,
+                    request.StartTimeUtc,
+                    request.EndTimeUtc,
+                    unit,
+                    1,
+                    limit,
+                    false,
+                    CancellationToken.None
+                ).GetAwaiter().GetResult();
+
+                return ConvertHistoricalBars(bars, request.Symbol, request.Resolution);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.GetHistory(): Error retrieving history for {request.Symbol}");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "HISTORY_ERROR",
+                    $"Error retrieving history for {request.Symbol}: {ex.Message}"));
+                return null;
+            }
+        }
+
+        private IEnumerable<BaseData> ConvertHistoricalBars(IEnumerable<PxAggregateBar> bars, Symbol symbol, Resolution resolution)
+        {
+            var period = resolution.ToTimeSpan();
+            foreach (var bar in bars)
+            {
+                yield return new TradeBar(bar.Timestamp, symbol, bar.Open, bar.High, bar.Low, bar.Close, (decimal)bar.Volume, period);
+            }
         }
 
         #region Connection Management Helper Methods
@@ -852,6 +1013,8 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 // Wire up WebSocket events before connecting
                 _wsClient.ConnectionStatusChanged += OnConnectionStatusChanged;
                 _wsClient.OrderUpdateReceived += OnOrderUpdateReceived;
+                _wsClient.PriceUpdateReceived += OnPriceUpdateReceived;
+                _wsClient.TradeUpdateReceived += OnTradeUpdateReceived;
 
                 // Connect both SignalR hubs
                 _wsClient.ConnectMarketHubAsync(_connectionCts.Token).GetAwaiter().GetResult();
