@@ -50,7 +50,7 @@ jobs:
       run: dotnet restore Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln
 
     - name: Build solution
-      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true /p:NoWarn="CA1063;CA1816;CA1003;CA1716;CA1031"
+      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true
 
     - name: Run tests (Skip live API tests)
       run: dotnet test Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-build --verbosity normal --filter "Category!=RequiresApiCredentials&Category!=Integration" --collect:"XPlat Code Coverage" --results-directory "TestResults/" --logger "trx;LogFileName=test-results.trx"
@@ -108,7 +108,7 @@ jobs:
       run: dotnet restore Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln
 
     - name: Run code analysis
-      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true /p:NoWarn="CA1063;CA1816;CA1003;CA1716;CA1031"
+      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true
       
     - name: Check formatting (advisory)
       run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --no-restore --verbosity minimal
