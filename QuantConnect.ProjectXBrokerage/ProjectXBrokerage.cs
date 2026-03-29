@@ -50,6 +50,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
     {
         private readonly IDataAggregator _aggregator;
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
+        private readonly ProjectXSymbolMapper _symbolMapper;
 
         // Connection state
         private volatile bool _isConnected;
@@ -117,6 +118,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             Log.Trace("ProjectXBrokerage(): Initializing ProjectX brokerage instance");
 
             _aggregator = aggregator;
+            _symbolMapper = new ProjectXSymbolMapper();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
             _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
@@ -1407,7 +1409,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             var request = new PlaceOrderRequest
             {
                 AccountId = _accountId,
-                ContractId = order.Symbol.Value,
+                ContractId = _symbolMapper.GetBrokerageSymbol(order.Symbol),
                 Type = pxType,
                 Side = side,
                 Size = (int)Math.Abs(order.Quantity),
@@ -1436,7 +1438,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         private Order ConvertFromProjectXOrder(PxOrder pxOrder)
         {
             // Phase 3: replace with _symbolMapper.GetLeanSymbol(pxOrder.ContractId, SecurityType.Future, Market.USA)
-            var symbol = Symbol.Create(pxOrder.ContractId, SecurityType.Future, Market.USA);
+            var symbol = _symbolMapper.GetLeanSymbol(pxOrder.ContractId, SecurityType.Future, string.Empty);
 
             var qty = (decimal)pxOrder.Size * (pxOrder.Side == PxOrderSide.Bid ? 1m : -1m);
             var time = pxOrder.CreationTimestamp;
