@@ -6,8 +6,8 @@
 
 ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin focused on futures trading (Phase 1). This repository implements the scaffolding and roadmap for connecting LEAN to the ProjectX trading platform.
 
-**Status**: Phase 2.2 - Order Management Implementation In Progress  
-**Last updated**: March 25, 2026  
+**Status**: Phases 1–6 Complete | API Refinements (PR #28 "Fix Gaps")  
+**Last updated**: March 29, 2026  
 **Project lead**: Marquette Speculations  
 **Repository**: https://github.com/adammarquette/Lean.Brokerages.ProjectX
 
@@ -138,11 +138,9 @@ The brokerage now includes core order management functionality:
 - ✅ Limit Order  
 - ✅ Stop Market Order
 - ✅ Stop Limit Order
+- ✅ Trailing Stop Order (added via `MarqSpec.Client.ProjectX` v1.0.3)
 - ❌ Market On Open/Close (not supported)
 - ❌ Option Exercise (not supported)
-- ❌ Trailing Stop (not supported)
-
-**Note**: MarqSpec.Client.ProjectX integration pending. Current implementation includes TODO markers for API integration points.
 
 ### Phase 2.3: Account Synchronization ✅ Complete
 
@@ -201,6 +199,19 @@ The brokerage now includes comprehensive account synchronization functionality:
 - Performance tests for success metrics validation
 
 **Status**: Core structure complete. Awaiting MarqSpec.Client.ProjectX integration for full API functionality.
+
+### MarqSpec.Client.ProjectX v1.0.3 Refinements ✅ Complete (PR #28)
+
+The following gaps were identified and closed against `MarqSpec.Client.ProjectX` v1.0.3:
+
+- **Tick price corrected** — `tick.Value` now uses `e.LastPrice` instead of the bid/ask midpoint
+- **Historical bars use live contracts** — `GetHistoricalBarsAsync` now passes `live: true`
+- **Heartbeat hardened** — `PingAsync` REST health check added alongside WebSocket hub state checks
+- **Trailing Stop orders** — fully supported end-to-end: validation, conversion to/from ProjectX, brokerage model
+- **Order update recovery** — `GetOrderAsync` used to recover orders missing from the WebSocket cache
+- **Richer rejection messages** — `RejectionReason` and `Message` fields surfaced in order events
+
+**Test coverage:** 106 unit tests pass (`dotnet test --filter ...SymbolMapper|OrderValidation|OrderIdMapping|Factory|BrokerageModel`)
 
 Development guidance
 --------------------
