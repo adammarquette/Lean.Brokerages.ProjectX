@@ -40,6 +40,12 @@ jobs:
         ref: ${{ env.LEAN_BRANCH }}
         path: Lean
 
+    - name: Ensure required map files directory exists
+      run: mkdir -p Lean/Data/equity/sgx/map_files
+
+    env:
+      BROKERAGE_PROJECT_X_API_KEY: ${{ secrets.BROKERAGE_PROJECT_X_API_KEY }}
+
     - name: Setup .NET 10 Preview
       uses: actions/setup-dotnet@v5
       with:
