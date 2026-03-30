@@ -108,7 +108,7 @@ jobs:
       run: dotnet restore Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln
 
     - name: Run code analysis
-      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore
+      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore --no-dependencies
       
     - name: Check formatting (advisory)
       run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --no-restore --verbosity minimal
