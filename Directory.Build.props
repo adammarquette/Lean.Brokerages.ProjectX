@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Suppress pre-existing LEAN engine CA violations and NuGet audit warnings
+         for vulnerable transitive packages that are outside this brokerage's control. -->
+    <NoWarn>$(NoWarn);CA1063;CA1816;CA1003;CA1716;CA1031;NU1903;NU1904</NoWarn>
+  </PropertyGroup>
+</Project>

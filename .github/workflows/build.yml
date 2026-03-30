@@ -12,6 +12,7 @@ env:
   CONFIGURATION: Release
   LEAN_REPO: 'https://github.com/adammarquette/Lean.git'
   LEAN_BRANCH: 'master'
+  CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
 jobs:
   build:
@@ -28,19 +29,19 @@ jobs:
 
     steps:
     - name: Checkout ProjectX Brokerage
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         path: Lean.Brokerages.ProjectX
 
     - name: Checkout LEAN
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: adammarquette/Lean
         ref: ${{ env.LEAN_BRANCH }}
         path: Lean
 
     - name: Setup .NET 10 Preview
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
         dotnet-quality: 'preview'
@@ -49,19 +50,12 @@ jobs:
       run: dotnet restore Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln
 
     - name: Build solution
-      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore
+      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true
 
     - name: Run tests (Skip live API tests)
-      run: |
-        dotnet test Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln \
-          --configuration ${{ env.CONFIGURATION }} \
-          --no-build \
-          --verbosity normal \
-          --filter "Category!=RequiresApiCredentials&Category!=Integration" \
-          --logger "trx;LogFileName=test-results.trx" \
-          -- NUnit.NumberOfTestWorkers=0
-      continue-on-error: true
-
+      run: dotnet test Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-build --verbosity normal --filter "Category!=RequiresApiCredentials&Category!=Integration" --collect:"XPlat Code Coverage" --results-directory "TestResults/" --logger "trx;LogFileName=test-results.trx"
+      continue-on-error: false
+      
     - name: Publish test results
       uses: EnricoMi/publish-unit-test-result-action@v2
       if: runner.os == 'Linux'
@@ -69,6 +63,14 @@ jobs:
         files: '**/test-results.trx'
         check_name: 'Test Results (${{ matrix.os }})'
 
+    - name: Upload coverage to Codecov
+      if: runner.os == 'Linux' && env.CODECOV_TOKEN != ''
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        directory: ./TestResults/
+        fail_ci_if_error: false
+        
     - name: Upload build artifacts
       if: matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
@@ -85,19 +87,19 @@ jobs:
 
     steps:
     - name: Checkout ProjectX Brokerage
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         path: Lean.Brokerages.ProjectX
 
     - name: Checkout LEAN
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: adammarquette/Lean
         ref: ${{ env.LEAN_BRANCH }}
         path: Lean
 
     - name: Setup .NET 10 Preview
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
         dotnet-quality: 'preview'
@@ -105,8 +107,11 @@ jobs:
     - name: Restore NuGet packages
       run: dotnet restore Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln
 
-    - name: Check formatting
-      run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --verbosity diagnostic
+    - name: Run code analysis
+      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore /p:TreatWarningsAsErrors=true
+      
+    - name: Check formatting (advisory)
+      run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --no-restore --verbosity minimal
       continue-on-error: true
 
     - name: Run security scan (if applicable)
@@ -120,7 +125,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Check for documentation files
       run: |

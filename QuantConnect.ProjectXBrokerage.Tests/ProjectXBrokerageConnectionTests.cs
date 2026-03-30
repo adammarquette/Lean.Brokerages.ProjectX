@@ -38,6 +38,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Set("brokerage-project-x-reconnect-attempts", "3");
             Config.Set("brokerage-project-x-reconnect-delay", "100");
             Config.Set("brokerage-project-x-connection-timeout", "5000");
+            Config.Set("brokerage-project-x-account-id", "12345");
 
             _aggregator = new TestDataAggregator();
         }
@@ -235,6 +236,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Reset();
             Config.Set("brokerage-project-x-api-key", "test-key");
             Config.Set("brokerage-project-x-api-secret", "test-secret");
+            Config.Set("brokerage-project-x-account-id", "12345");
             // Don't set optional values, let defaults apply
 
             // Act
@@ -282,6 +284,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Reset();
             Config.Set("brokerage-project-x-api-key", "test-key");
             Config.Set("brokerage-project-x-api-secret", "test-secret");
+            Config.Set("brokerage-project-x-account-id", "12345");
             Config.Set("brokerage-project-x-reconnect-attempts", "25");
             var brokerage2 = new ProjectXBrokerage(_aggregator);
 
@@ -474,6 +477,55 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             // Assert
             Assert.IsTrue(brokerage.IsConnected, "Brokerage should be connected");
             Assert.Greater(successCount, 0, "At least one thread should succeed");
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void ConnectDisconnect_ConcurrentCalls_NoDeadlockOrException()
+        {
+            // Arrange
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            var exceptions = 0;
+            var barrier = new Barrier(2);
+
+            // Act
+            var connectThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for(int i = 0; i < 5; i++)
+                    {
+                        brokerage.Connect();
+                        Thread.Sleep(10);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            var disconnectThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for(int i = 0; i < 5; i++)
+                    {
+                        brokerage.Disconnect();
+                        Thread.Sleep(10);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            connectThread.Start();
+            disconnectThread.Start();
+
+            var connectFinished = connectThread.Join(TimeSpan.FromSeconds(10));
+            var disconnectFinished = disconnectThread.Join(TimeSpan.FromSeconds(10));
+
+            // Assert
+            Assert.AreEqual(0, exceptions, "Concurrent connect/disconnect should not throw exceptions.");
+            Assert.IsTrue(connectFinished, "Connect thread should have finished (no deadlock).");
+            Assert.IsTrue(disconnectFinished, "Disconnect thread should have finished (no deadlock).");
         }
 
         [Test, Category("RequiresApiCredentials")]
