@@ -107,8 +107,10 @@ jobs:
     - name: Restore NuGet packages
       run: dotnet restore Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln
 
-    - name: Run code analysis
-      run: dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --configuration ${{ env.CONFIGURATION }} --no-restore --no-dependencies
+    - name: Run code analysis (ProjectX only)
+      run: |
+        dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage/QuantConnect.ProjectXBrokerage.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
+        dotnet build Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.ToolBox/QuantConnect.ProjectXBrokerage.ToolBox.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
       
     - name: Check formatting (advisory)
       run: dotnet format Lean.Brokerages.ProjectX/QuantConnect.ProjectXBrokerage.sln --verify-no-changes --no-restore --verbosity minimal
