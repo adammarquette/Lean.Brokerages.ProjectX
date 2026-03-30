@@ -41,6 +41,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflow", "workflow", "{40
 	ProjectSection(SolutionItems) = preProject
 		.github\workflows\build.yml = .github\workflows\build.yml
 		.github\workflows\gh-actions.yml = .github\workflows\gh-actions.yml
+		.github\workflows\protect-master.yml = .github\workflows\protect-master.yml
 	EndProjectSection
 EndProject
 Global
