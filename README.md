@@ -73,15 +73,118 @@ Configuration is managed through LEAN's standard JSON configuration files. Copy 
 
 ### Configuration Options
 
-See the complete configuration documentation in `PRD.md` > Appendix > Configuration Schema for:
-- All available configuration keys and their descriptions
-- Environment-specific settings (sandbox vs production)
-- Rate limiting and performance tuning
-- Logging configuration
-- Security best practices
+  - Connection validation
+  - Ready for API integration
+- Bidirectional thread-safe mapping between LEAN and ProjectX order IDs
+
+# ProjectX Lean Brokerage
+
+[![Build Status](https://github.com/adammarquette/Lean.Brokerages.ProjectX/actions/workflows/build.yml/badge.svg)](https://github.com/adammarquette/Lean.Brokerages.ProjectX/actions)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin focused on futures trading.
+
+**Status:** Phase 2 - Core Trading Implementation In Progress  
+**Last updated:** March 30, 2026  
+**Project lead:** Marquette Speculations  
+**Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
+
+**Important:** This brokerage is designed for systematic and algorithmic trading strategies. It is **not optimized for high-frequency trading (HFT)** requiring sub-10ms latency or >100 orders/sec throughput.
+
+---
+
+## Project Scope & Roadmap
+
+This project provides a LEAN-compatible brokerage implementation that enables backtesting and live trading of **futures contracts** on ProjectX. The architecture is designed for future expansion to additional asset classes.
+
+**Current Phase:**
+- Phase 2: Core Trading (Order Management, Account Synchronization)
+
+**Planned Phases:**
+- Phase 3: Market Data (real-time & historical)
+- Phase 4: Production Readiness & Expanded Asset Support
+
+**Supported:**
+- Futures contracts only (initial release)
+- Market, Limit, Stop Market, Stop Limit order types
+
+**Not Supported (yet):**
+- Market On Open/Close, Option Exercise, Trailing Stop
+- Asset classes other than futures
+
+**Constraints:**
+- ProjectX API rate limits may impact data/order throughput
+- Trading restricted to ProjectX-supported futures market hours
+- Requires .NET 10 and LEAN Engine
+
+---
+
+## User Stories & Success Criteria
+
+**User Stories:**
+- As a futures day trader, I want to use my LEAN algorithm with ProjectX for low-latency execution (<100ms order latency).
+- As a researcher, I want to backtest strategies using ProjectX historical data (5+ years, all major futures contracts).
+
+**Success Criteria:**
+- [ ] All LEAN interface contracts fully implemented
+- [ ] >90% code coverage in integration tests
+- [ ] 30+ days paper trading without critical errors
+- [ ] Live trading validation with real account
+- [ ] Performance: <100ms order latency, <1s data lag
+
+---
+
+## Quick Start
+
+### Prerequisites
+- **.NET 10 SDK** ([Download](https://dotnet.microsoft.com/download/dotnet/10.0))
+- **LEAN Engine** repository cloned at `../Lean` relative to this repository
+
+### Setup
+```bash
+# Clone ProjectX Brokerage
+git clone https://github.com/adammarquette/Lean.Brokerages.ProjectX.git
+cd Lean.Brokerages.ProjectX
+
+# Clone LEAN Engine (required dependency)
+cd ..
+git clone https://github.com/adammarquette/Lean.git
+cd Lean.Brokerages.ProjectX
+
+# Restore and build
+dotnet restore
+dotnet build
+
+# Run tests (excludes tests requiring API credentials)
+dotnet test --filter "Category!=RequiresApiCredentials&Category!=Integration"
+```
+
+### Documentation
+- **[PRD.md](PRD.md)** - Project requirements, architecture, and roadmap
+- **[CONFIGURATION.md](CONFIGURATION.md)** - Configuration guide
+- **[DIAGRAMS.md](DIAGRAMS.md)** - Architecture diagrams
+- **[CICD.md](CICD.md)** - CI/CD documentation
+
+---
+
+## Configuration
+
+Configuration is managed through LEAN's standard JSON configuration files. Copy `config.template.json` to create your own configuration file, then fill in your credentials.
+
+**⚠️ NEVER commit credentials to source control!**
+
+### Required Configuration
+```json
+{
+  "brokerage": "ProjectXBrokerage",
+  "brokerage-project-x-api-key": "your-api-key",
+  "brokerage-project-x-api-secret": "your-api-secret",
+  "data-queue-handler": "ProjectXBrokerage"
+}
+```
 
 ### Environment Variables
-
 All configuration keys can be set via environment variables using the `QC_` prefix:
 ```bash
 export QC_BROKERAGE_PROJECT_X_API_KEY="your-api-key"
@@ -94,158 +197,80 @@ export QC_BROKERAGE_PROJECT_X_ENVIRONMENT="sandbox"
 - `config.template.json` - Template with all options documented
 - See `PRD.md` for detailed configuration examples
 
-Features Implemented
---------------------
+---
 
-### Phase 2.2: Order Management (In Progress)
+## Features Implemented
 
-The brokerage now includes core order management functionality:
+### Order Management (Phase 2)
+- **PlaceOrder()**: Market, Limit, Stop Market, Stop Limit
+- **CancelOrder()**: Cancel pending orders
+- **GetOpenOrders()**: Retrieve open orders
+- **Order ID Mapping**: Thread-safe, bidirectional
+- **Order Validation**: Symbol, quantity, type, price, connection state
 
-#### Order Execution
-- **PlaceOrder()**: Submits new orders to ProjectX with comprehensive validation
-  - Supports Market, Limit, Stop Market, and Stop Limit orders
-  - Duplicate submission detection (5-second window)
-  - Automatic order ID mapping (LEAN ↔ ProjectX)
-  - OrderEvent firing for status changes
+### Account Synchronization (Phase 2)
+- **GetAccountHoldings()**: Retrieve positions
+- **GetCashBalance()**: Retrieve cash balances (multi-currency)
+- **ReconcilePositions()**: Sync LEAN state with ProjectX
+- **SubscribeToAccountUpdates()**: WebSocket account events
+- **HandleAccountUpdate()**: Real-time balance/position updates
 
-- **CancelOrder()**: Cancels pending orders
-  - Connection state validation
-  - Order ID lookup from internal mapping
-  - CancelPending event firing
+### Test Coverage
+- 29 unit tests (5 executable, 24 pending ProjectX client integration)
+- Tests for holdings, cash, account updates, reconciliation
 
-- **UpdateOrder()**: Currently returns false (modifications not supported)
-  - Use cancel-and-replace pattern instead
+---
 
-- **GetOpenOrders()**: Retrieves all open orders
-  - Connection validation
-  - Ready for API integration
+## Technical Architecture
 
-#### Order ID Mapping
-- Bidirectional thread-safe mapping between LEAN and ProjectX order IDs
-- Uses `ConcurrentDictionary` for thread-safe concurrent access
-- Automatic cleanup of completed orders
+Implements LEAN brokerage interfaces:
+- `IBrokerageFactory`: Instantiates/configures brokerage
+- `IBrokerage`: Order placement, account sync, connection, events
+- `ISymbolMapper`: Futures symbol translation (LEAN ↔ ProjectX)
+- `IBrokerageModel`: Order types, margin, contract specs, market hours
 
-#### Order Validation
-- Connection state check
-- Symbol validation (no universe/canonical symbols)
-- Quantity validation (non-zero required)
-- Order type support verification
-- Price validation for limit/stop orders
-- Detailed error messages
+**Pending:** MarqSpec.Client.ProjectX integration for live API connectivity
 
-#### Supported Order Types
-- ✅ Market Order
-- ✅ Limit Order  
-- ✅ Stop Market Order
-- ✅ Stop Limit Order
-- ✅ Trailing Stop Order (added via `MarqSpec.Client.ProjectX` v1.0.3)
-- ❌ Market On Open/Close (not supported)
-- ❌ Option Exercise (not supported)
+---
 
-### Phase 2.3: Account Synchronization ✅ Complete
+## Development Guidance
 
-The brokerage now includes comprehensive account synchronization functionality:
+- Start from provided stubs; follow LEAN brokerage examples (TradeStation, Bybit, Binance)
+- Implement `GetHistory()` early to validate symbol mapping
+- Keep authentication isolated (token refresh, OAuth)
+- Use `BaseWebsocketsBrokerage` for streaming
+- Add unit tests for every feature
 
-#### Account Data Retrieval
-- **GetAccountHoldings()**: Retrieves current positions from ProjectX
-  - Connection state validation
-  - Error handling and logging
-  - Returns `List<Holding>` with all required properties
-  - Ready for ProjectX position conversion
-  - Empty list returned when not connected
+---
 
-- **GetCashBalance()**: Retrieves account cash balance
-  - Connection state validation
-  - Multi-currency support structure in place
-  - Returns `List<CashAmount>` for each currency
-  - Defaults to USD when currency not specified
-  - Empty list returned when not connected
+## Resources
 
-#### Position Reconciliation
-- **ReconcilePositions()**: Synchronizes LEAN state with ProjectX on connect
-  - Queries holdings and balances from ProjectX
-  - Compares with cached LEAN state
-  - Detects discrepancies (missing, extra, quantity mismatches)
-  - Logs warnings for inconsistencies
-  - Updates LEAN to match ProjectX (ProjectX as source of truth)
-  - Fires AccountChanged events when needed
-
-#### Real-time Account Updates
-- **SubscribeToAccountUpdates()**: Subscribes to WebSocket account events
-  - Automatic subscription on connection
-  - Resubscription after reconnection
-  - Error handling and logging
-
-- **HandleAccountUpdate()**: Processes account update messages
-  - Balance change handling
-  - Position change handling
-  - Realized P&L tracking
-  - Fires AccountChanged events
-  - Updates internal state cache
-
-#### Integration Points
-- Position reconciliation called after successful connection
-- Account updates subscribed during connection establishment
-- Resubscription and reconciliation after reconnection
-- All methods include comprehensive logging at appropriate levels
-
-#### Test Coverage
-- 29 unit tests created (5 executable, 24 awaiting MarqSpec.Client.ProjectX)
-- Tests for GetAccountHoldings (empty, not connected, property mapping)
-- Tests for GetCashBalance (empty, not connected, multi-currency)
-- Tests for account update handling
-- Tests for position reconciliation scenarios
-- Integration tests for sandbox environment (when credentials available)
-- Performance tests for success metrics validation
-
-**Status**: Core structure complete. Awaiting MarqSpec.Client.ProjectX integration for full API functionality.
-
-### MarqSpec.Client.ProjectX v1.0.3 Refinements ✅ Complete (PR #28)
-
-The following gaps were identified and closed against `MarqSpec.Client.ProjectX` v1.0.3:
-
-- **Tick price corrected** — `tick.Value` now uses `e.LastPrice` instead of the bid/ask midpoint
-- **Historical bars use live contracts** — `GetHistoricalBarsAsync` now passes `live: true`
-- **Heartbeat hardened** — `PingAsync` REST health check added alongside WebSocket hub state checks
-- **Trailing Stop orders** — fully supported end-to-end: validation, conversion to/from ProjectX, brokerage model
-- **Order update recovery** — `GetOrderAsync` used to recover orders missing from the WebSocket cache
-- **Richer rejection messages** — `RejectionReason` and `Message` fields surfaced in order events
-
-**Test coverage:** 106 unit tests pass (`dotnet test --filter ...SymbolMapper|OrderValidation|OrderIdMapping|Factory|BrokerageModel`)
-
-Development guidance
---------------------
-- Start from the factory and brokerage stubs provided. Follow LEAN brokerage examples (TradeStation, Bybit, Binance) for reference.
-- Implement `GetHistory()` early to validate symbol mapping and history provider behavior.
-- Keep authentication isolated in a dedicated class (token refresh, OAuth flows).
-- Use `BaseWebsocketsBrokerage` and `BrokerageMultiWebSocketSubscriptionManager` when implementing streaming.
-- Add unit tests for every implemented feature and aim for high coverage before live-trading components are introduced.
-
-Resources
----------
 - LEAN engine: https://github.com/QuantConnect/Lean
 - PRD and architecture: `PRD.md`
 - MarqSpec ProjectX client (internal): https://github.com/adammarquette/MarqSpec.Client.ProjectX
 
-Contributing
-------------
+---
+
+## Contributing
+
 Please open issues and PRs against this repository. Follow the branching workflow:
 
-**Branching Strategy**: `master` ← `develop` ← `feature-branch`
+**Branching Strategy:** `master` ← `develop` ← `feature-branch`
+- `master`: Release branch (production-ready)
+- `develop`: Active development
+- Feature branches: Branch off from `develop`, merge back via PR
 
-- **`master`**: Release branch (production-ready code)
-- **`develop`**: Active development branch
-- **Feature branches**: Branch off from `develop`, merge back to `develop` via PR
-
-**Workflow**:
+**Workflow:**
 1. Create feature branch from `develop`: `git checkout -b feature/my-feature develop`
 2. Make changes and commit
-3. Open PR against `develop` branch
-4. After review and approval, feature merges to `develop`
+3. Open PR against `develop`
+4. After review, merge to `develop`
 5. Periodic releases merge `develop` → `master`
 
-**Important**: Do not commit any secret or credential material.
+**Important:** Do not commit any secret or credential material.
 
-License
--------
+---
+
+## License
+
 See the repository `LICENSE` file.
