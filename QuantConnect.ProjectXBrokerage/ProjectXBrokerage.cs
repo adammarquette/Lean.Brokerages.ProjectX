@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -20,25 +20,63 @@ using System.Threading.Tasks;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
+using QuantConnect.Orders.Fees;
 using QuantConnect.Packets;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Logging;
 using QuantConnect.Configuration;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using MarqSpec.Client.ProjectX;
+using MarqSpec.Client.ProjectX.DependencyInjection;
+using ModifyOrderRequest = MarqSpec.Client.ProjectX.Api.Models.ModifyOrderRequest;
+using PlaceOrderRequest = MarqSpec.Client.ProjectX.Api.Models.PlaceOrderRequest;
+using PxOrderUpdate = MarqSpec.Client.ProjectX.Api.Models.OrderUpdate;
+using MarqSpec.Client.ProjectX.Exceptions;
+using MarqSpec.Client.ProjectX.WebSocket;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using PxOrder = MarqSpec.Client.ProjectX.Api.Models.Order;
+using PxOrderStatus = MarqSpec.Client.ProjectX.Api.Models.OrderStatus;
+using PxOrderType = MarqSpec.Client.ProjectX.Api.Models.OrderType;
+using PxOrderSide = MarqSpec.Client.ProjectX.Api.Models.OrderSide;
+using PxPosition = MarqSpec.Client.ProjectX.Api.Models.Position;
+using PxPositionType = MarqSpec.Client.ProjectX.Api.Models.PositionType;
+using PxAccount = MarqSpec.Client.ProjectX.Api.Models.TradingAccount;
+using PxPriceUpdate = MarqSpec.Client.ProjectX.Api.Models.PriceUpdate;
+using PxTradeUpdate = MarqSpec.Client.ProjectX.Api.Models.TradeUpdate;
+using PxAggregateBar = MarqSpec.Client.ProjectX.Api.Models.AggregateBar;
+using PxAggregateBarUnit = MarqSpec.Client.ProjectX.Api.Models.AggregateBarUnit;
+using QuantConnect.Data.Market;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage
 {
     [BrokerageFactory(typeof(ProjectXBrokerageFactory))]
-    public class ProjectXBrokerage : Brokerage, IDataQueueHandler, IDataQueueUniverseProvider
+    public partial class ProjectXBrokerage : Brokerage
     {
         private readonly IDataAggregator _aggregator;
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
+        private readonly ProjectXSymbolMapper _symbolMapper;
 
         // Connection state
         private volatile bool _isConnected;
         private readonly object _connectionLock = new object();
         private readonly SemaphoreSlim _connectionSemaphore = new SemaphoreSlim(1, 1);
+
+        // Order ID mapping - Thread-safe bidirectional mapping
+        private readonly ConcurrentDictionary<int, long> _leanToProjectXOrderIds = new ConcurrentDictionary<int, long>();
+        private readonly ConcurrentDictionary<long, int> _projectXToLeanOrderIds = new ConcurrentDictionary<long, int>();
+        private readonly ConcurrentDictionary<long, Order> _ordersCache = new ConcurrentDictionary<long, Order>();
+        private readonly object _orderMappingLock = new object();
+
+        // Market data subscription tracking - maps ProjectX contractId to LEAN Symbol
+        private readonly ConcurrentDictionary<string, Symbol> _subscribedContractIds = new ConcurrentDictionary<string, Symbol>();
+
+        // Recently submitted orders for duplicate detection (OrderId -> submission time)
+        private readonly ConcurrentDictionary<int, DateTime> _recentlySubmittedOrders = new ConcurrentDictionary<int, DateTime>();
+        private readonly TimeSpan _duplicateDetectionWindow = TimeSpan.FromSeconds(5);
 
         // Configuration
         private string _apiKey;
@@ -53,8 +91,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         private Task _heartbeatTask;
         private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(30);
 
-        // TODO: Replace with actual MarqSpec.Client.ProjectX instance when available
-        // private readonly IProjectXClient _apiClient;
+        private IProjectXApiClient _apiClient;
+        private IProjectXWebSocketClient _wsClient;
+        private ServiceProvider _serviceProvider;
+        private int _accountId;
+        private string _baseUrl;
+        private IOrderProvider _orderProvider;
+        private ISecurityProvider _securityProvider;
 
         /// <summary>
         /// Returns true if we're currently connected to the broker
@@ -80,6 +123,36 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         }
 
         /// <summary>
+        /// Creates a new instance of the ProjectXBrokerage with explicit parameters
+        /// </summary>
+        /// <param name="apiKey">The ProjectX API key</param>
+        /// <param name="apiSecret">The ProjectX API secret</param>
+        /// <param name="environment">The target environment (sandbox or production)</param>
+        /// <param name="accountId">The ProjectX account ID</param>
+        /// <param name="aggregator">The data aggregator for consolidating ticks</param>
+        public ProjectXBrokerage(string apiKey, string apiSecret, string environment, int accountId, IDataAggregator aggregator) : base("ProjectXBrokerage")
+        {
+            Log.Trace("ProjectXBrokerage(): Initializing ProjectX brokerage instance with explicit configuration");
+
+            _aggregator = aggregator ?? Composer.Instance.GetPart<IDataAggregator>();
+            _symbolMapper = new ProjectXSymbolMapper();
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
+            _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
+
+            _apiKey = apiKey;
+            _apiSecret = apiSecret;
+            _environment = environment;
+            _accountId = accountId;
+            
+            LoadOptionalConfiguration();
+
+            // Initialize connection state
+            _isConnected = false;
+            _connectionCts = new CancellationTokenSource();
+        }
+
+        /// <summary>
         /// Creates a new instance
         /// </summary>
         /// <param name="aggregator">consolidate ticks</param>
@@ -88,6 +161,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             Log.Trace("ProjectXBrokerage(): Initializing ProjectX brokerage instance");
 
             _aggregator = aggregator;
+            _symbolMapper = new ProjectXSymbolMapper();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
             _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
@@ -111,53 +185,40 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             Log.Trace("ProjectXBrokerage(): Initialization complete");
         }
 
-        #region IDataQueueHandler
-
         /// <summary>
-        /// Subscribe to the specified configuration
+        /// Creates a new instance of the ProjectXBrokerage for testing purposes
         /// </summary>
-        /// <param name="dataConfig">defines the parameters to subscribe to a data feed</param>
-        /// <param name="newDataAvailableHandler">handler to be fired on new data available</param>
-        /// <returns>The new enumerator for this subscription request</returns>
-        public IEnumerator<BaseData> Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
+        internal ProjectXBrokerage(
+            IProjectXApiClient apiClient,
+            IProjectXWebSocketClient wsClient,
+            ProjectXSymbolMapper symbolMapper,
+            IOrderProvider orderProvider,
+            ISecurityProvider securityProvider,
+            IDataAggregator aggregator)
+            : base("ProjectXBrokerage")
         {
-            if (!CanSubscribe(dataConfig.Symbol))
-            {
-                Log.Trace($"ProjectXBrokerage.Subscribe(): Subscription not allowed for symbol: {dataConfig.Symbol}");
-                return null;
-            }
+            _apiClient = apiClient;
+            _wsClient = wsClient;
+            _symbolMapper = symbolMapper;
+            _aggregator = aggregator;
 
-            Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {dataConfig.Symbol}, Resolution: {dataConfig.Resolution}");
+            // Initialize other necessary fields
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
+            _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
+            _connectionCts = new CancellationTokenSource();
+            _isConnected = true; // Assume connected for tests
 
-            var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
-            _subscriptionManager.Subscribe(dataConfig);
+            // Set providers
+            _orderProvider = orderProvider;
+            _securityProvider = securityProvider;
 
-            return enumerator;
+            // Wire up WebSocket events for testing
+            _wsClient.ConnectionStatusChanged += OnConnectionStatusChanged;
+            _wsClient.OrderUpdateReceived += OnOrderUpdateReceived;
+            _wsClient.PriceUpdateReceived += OnPriceUpdateReceived;
+            _wsClient.TradeUpdateReceived += OnTradeUpdateReceived;
         }
-
-        /// <summary>
-        /// Removes the specified configuration
-        /// </summary>
-        /// <param name="dataConfig">Subscription config to be removed</param>
-        public void Unsubscribe(SubscriptionDataConfig dataConfig)
-        {
-            Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {dataConfig.Symbol}");
-
-            _subscriptionManager.Unsubscribe(dataConfig);
-            _aggregator.Remove(dataConfig);
-        }
-
-        /// <summary>
-        /// Sets the job we're subscribing for
-        /// </summary>
-        /// <param name="job">Job we're subscribing for</param>
-        public void SetJob(LiveNodePacket job)
-        {
-            Log.Trace($"ProjectXBrokerage.SetJob(): Job UserId: {job?.UserId}, AlgorithmId: {job?.AlgorithmId}");
-            throw new NotImplementedException("ProjectXBrokerage.SetJob(): Implementation pending Phase 2");
-        }
-
-        #endregion
 
         #region Brokerage
 
@@ -165,11 +226,46 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// Gets all open orders on the account.
         /// NOTE: The order objects returned do not have QC order IDs.
         /// </summary>
-        /// <returns>The open orders returned from IB</returns>
+        /// <returns>The open orders returned from ProjectX</returns>
         public override List<Order> GetOpenOrders()
         {
             Log.Trace("ProjectXBrokerage.GetOpenOrders(): Retrieving open orders");
-            throw new NotImplementedException("ProjectXBrokerage.GetOpenOrders(): Implementation pending Phase 2");
+
+            try
+            {
+                // Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetOpenOrders(): Not connected to ProjectX");
+                    return new List<Order>();
+                }
+
+                var pxOrders = _apiClient.GetOpenOrdersAsync(_accountId, CancellationToken.None).GetAwaiter().GetResult();
+                var openOrders = new List<Order>();
+
+                foreach (var pxOrder in pxOrders)
+                {
+                    try
+                    {
+                        var order = ConvertFromProjectXOrder(pxOrder);
+                        openOrders.Add(order);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, $"ProjectXBrokerage.GetOpenOrders(): Failed to convert ProjectX order {pxOrder.Id}");
+                    }
+                }
+
+                Log.Debug($"ProjectXBrokerage.GetOpenOrders(): Retrieved {openOrders.Count} open orders");
+                return openOrders;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.GetOpenOrders(): Error retrieving open orders");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "GET_OPEN_ORDERS_ERROR", 
+                    $"Error retrieving open orders: {ex.Message}"));
+                return new List<Order>();
+            }
         }
 
         /// <summary>
@@ -179,7 +275,41 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override List<Holding> GetAccountHoldings()
         {
             Log.Trace("ProjectXBrokerage.GetAccountHoldings(): Retrieving account holdings");
-            throw new NotImplementedException("ProjectXBrokerage.GetAccountHoldings(): Implementation pending Phase 2");
+
+            try
+            {
+                // Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetAccountHoldings(): Not connected to ProjectX");
+                    return new List<Holding>();
+                }
+
+                var pxPositions = _apiClient.GetOpenPositionsAsync(_accountId, CancellationToken.None).GetAwaiter().GetResult();
+                var holdings = new List<Holding>();
+
+                foreach (var pxPosition in pxPositions)
+                {
+                    try
+                    {
+                        holdings.Add(ConvertFromProjectXPosition(pxPosition));
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, $"ProjectXBrokerage.GetAccountHoldings(): Failed to convert position {pxPosition.ContractId}");
+                    }
+                }
+
+                Log.Debug($"ProjectXBrokerage.GetAccountHoldings(): Retrieved {holdings.Count} holding(s)");
+                return holdings;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.GetAccountHoldings(): Error retrieving account holdings");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "GET_HOLDINGS_ERROR", 
+                    $"Error retrieving account holdings: {ex.Message}"));
+                return new List<Holding>();
+            }
         }
 
         /// <summary>
@@ -189,7 +319,35 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         public override List<CashAmount> GetCashBalance()
         {
             Log.Trace("ProjectXBrokerage.GetCashBalance(): Retrieving cash balance");
-            throw new NotImplementedException("ProjectXBrokerage.GetCashBalance(): Implementation pending Phase 2");
+
+            try
+            {
+                // Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetCashBalance(): Not connected to ProjectX");
+                    return new List<CashAmount>();
+                }
+
+                var accounts = _apiClient.GetAccountsAsync(true, CancellationToken.None).GetAwaiter().GetResult();
+                var account = accounts?.FirstOrDefault(a => a.Id == _accountId);
+
+                if (account == null)
+                {
+                    Log.Error($"ProjectXBrokerage.GetCashBalance(): Account {_accountId} not found in response");
+                    return new List<CashAmount>();
+                }
+
+                Log.Debug($"ProjectXBrokerage.GetCashBalance(): Account {_accountId} balance={account.Balance}");
+                return new List<CashAmount> { new CashAmount(account.Balance, "USD") };
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.GetCashBalance(): Error retrieving cash balance");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "GET_CASH_BALANCE_ERROR", 
+                    $"Error retrieving cash balance: {ex.Message}"));
+                return new List<CashAmount>();
+            }
         }
 
         /// <summary>
@@ -199,8 +357,74 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if the request for a new order has been placed, false otherwise</returns>
         public override bool PlaceOrder(Order order)
         {
-            Log.Trace($"ProjectXBrokerage.PlaceOrder(): Symbol: {order.Symbol}, Quantity: {order.Quantity}, Type: {order.Type}");
-            throw new NotImplementedException("ProjectXBrokerage.PlaceOrder(): Implementation pending Phase 2");
+            Log.Trace($"ProjectXBrokerage.PlaceOrder(): OrderId={order.Id}, Symbol={order.Symbol}, Quantity={order.Quantity}, Type={order.Type}");
+
+            try
+            {
+                // 1. Pre-submission validation
+                if (!ValidateOrder(order, out var errorMessage))
+                {
+                    Log.Error($"ProjectXBrokerage.PlaceOrder(): Order validation failed: {errorMessage}");
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Order Validation Failed")
+                    {
+                        Status = OrderStatus.Invalid,
+                        Message = errorMessage
+                    });
+                    return false;
+                }
+
+                // 2. Check for duplicate submission
+                if (IsDuplicateSubmission(order))
+                {
+                    Log.Error($"ProjectXBrokerage.PlaceOrder(): Duplicate order submission detected for OrderId={order.Id}");
+                    return false;
+                }
+
+                // 3. Convert LEAN order to ProjectX format
+                var request = ConvertToProjectXOrder(order);
+
+                // 4. Submit order via API
+                var response = _apiClient.PlaceOrderAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+                if (!response.Success)
+                {
+                    HandleOrderRejection(order, response.ErrorCode.ToString(), response.ErrorMessage);
+                    return false;
+                }
+
+                if (!response.OrderId.HasValue)
+                {
+                    Log.Error($"ProjectXBrokerage.PlaceOrder(): Success response missing order ID for LEAN order {order.Id}");
+                    return false;
+                }
+
+                var projectXOrderId = response.OrderId.Value;
+
+                // 5. Store order ID mapping and cache the order for WebSocket event lookup
+                AddOrderIdMapping(order.Id, projectXOrderId);
+                _ordersCache[projectXOrderId] = order;
+
+                // 6. Mark order as recently submitted
+                _recentlySubmittedOrders.TryAdd(order.Id, DateTime.UtcNow);
+
+                // 7. Fire order event (Submitted status)
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Order Placed")
+                {
+                    Status = OrderStatus.Submitted
+                });
+
+                Log.Trace($"ProjectXBrokerage.PlaceOrder(): Order placed successfully. LEAN ID={order.Id}, ProjectX ID={projectXOrderId}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.PlaceOrder(): Error placing order {order.Id}");
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Order Error")
+                {
+                    Status = OrderStatus.Invalid,
+                    Message = $"Error placing order: {ex.Message}"
+                });
+                return false;
+            }
         }
 
         /// <summary>
@@ -210,8 +434,64 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
         public override bool UpdateOrder(Order order)
         {
-            Log.Trace($"ProjectXBrokerage.UpdateOrder(): OrderId: {order.Id}, Symbol: {order.Symbol}, Quantity: {order.Quantity}");
-            throw new NotImplementedException("ProjectXBrokerage.UpdateOrder(): Implementation pending Phase 2");
+            Log.Trace($"ProjectXBrokerage.UpdateOrder(): OrderId={order.Id}, Symbol={order.Symbol}, Quantity={order.Quantity}");
+
+            try
+            {
+                // 1. Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.UpdateOrder(): Not connected to ProjectX");
+                    return false;
+                }
+
+                // 2. Retrieve ProjectX order ID from mapping
+                if (!_leanToProjectXOrderIds.TryGetValue(order.Id, out var projectXOrderId))
+                {
+                    Log.Error($"ProjectXBrokerage.UpdateOrder(): Order ID {order.Id} not found in mapping");
+                    return false;
+                }
+
+                // 3. Build the modification request with updated fields
+                var request = new ModifyOrderRequest
+                {
+                    AccountId = _accountId,
+                    OrderId = projectXOrderId,
+                    Size = (int)Math.Abs(order.Quantity)
+                };
+
+                if (order is LimitOrder limitOrder)
+                    request.LimitPrice = limitOrder.LimitPrice;
+                else if (order is StopLimitOrder stopLimitOrder)
+                {
+                    request.LimitPrice = stopLimitOrder.LimitPrice;
+                    request.StopPrice = stopLimitOrder.StopPrice;
+                }
+                else if (order is StopMarketOrder stopMarketOrder)
+                    request.StopPrice = stopMarketOrder.StopPrice;
+
+                // 4. Submit modification via API
+                var response = _apiClient.ModifyOrderAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+                if (!response.Success)
+                {
+                    Log.Error($"ProjectXBrokerage.UpdateOrder(): Failed to update order. Code: {response.ErrorCode}, Message: {response.ErrorMessage}");
+                    return false;
+                }
+
+                // 5. Fire order event
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Order Updated")
+                {
+                    Status = OrderStatus.UpdateSubmitted
+                });
+
+                Log.Trace($"ProjectXBrokerage.UpdateOrder(): Order {order.Id} updated successfully");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.UpdateOrder(): Error updating order {order.Id}");
+                return false;
+            }
         }
 
         /// <summary>
@@ -221,8 +501,56 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
         public override bool CancelOrder(Order order)
         {
-            Log.Trace($"ProjectXBrokerage.CancelOrder(): OrderId: {order.Id}, Symbol: {order.Symbol}");
-            throw new NotImplementedException("ProjectXBrokerage.CancelOrder(): Implementation pending Phase 2");
+            Log.Trace($"ProjectXBrokerage.CancelOrder(): OrderId={order.Id}, Symbol={order.Symbol}");
+
+            try
+            {
+                // 1. Validate connection
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.CancelOrder(): Not connected to ProjectX");
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Not Connected")
+                    {
+                        Status = OrderStatus.Invalid,
+                        Message = "Cannot cancel order: not connected to ProjectX"
+                    });
+                    return false;
+                }
+
+                // 2. Retrieve ProjectX order ID from mapping
+                if (!_leanToProjectXOrderIds.TryGetValue(order.Id, out var projectXOrderId))
+                {
+                    Log.Error($"ProjectXBrokerage.CancelOrder(): Order ID {order.Id} not found in mapping. May have already been filled/canceled.");
+                    // Don't treat this as an error - order may have already been filled
+                    return false;
+                }
+
+                // 3. Submit cancellation request
+                var cancelResponse = _apiClient.CancelOrderAsync(_accountId, projectXOrderId, CancellationToken.None).GetAwaiter().GetResult();
+                if (!cancelResponse.Success)
+                {
+                    Log.Error($"ProjectXBrokerage.CancelOrder(): Failed to cancel Order {order.Id}. Code: {cancelResponse.ErrorCode}, Message: {cancelResponse.ErrorMessage}");
+                    return false;
+                }
+
+                Log.Trace($"ProjectXBrokerage.CancelOrder(): Cancellation submitted for Order {order.Id} (ProjectX ID: {projectXOrderId})");
+
+                // 4. Fire CancelPending event; the final Canceled status will arrive via the OrderUpdateReceived WebSocket event
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Cancel Requested")
+                {
+                    Status = OrderStatus.CancelPending
+                });
+
+                Log.Debug($"ProjectXBrokerage.CancelOrder(): Order {order.Id} cancel request successful");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.CancelOrder(): Error canceling order {order.Id}");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CANCEL_ORDER_ERROR",
+                    $"Error canceling order {order.Id}: {ex.Message}"));
+                return false;
+            }
         }
 
         /// <summary>
@@ -238,21 +566,34 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 return;
             }
 
-            // Validate configuration
-            ValidateConfiguration();
-
-            // Attempt connection with retry logic
-            var connected = ConnectWithRetry();
-
-            if (!connected)
+            _connectionSemaphore.Wait();
+            try
             {
-                var message = $"ProjectXBrokerage.Connect(): Failed to connect after {_maxReconnectAttempts} attempts";
-                Log.Error(message);
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CONNECTION_FAILED", message));
-                throw new Exception(message);
-            }
+                if (IsConnected)
+                {
+                    return;
+                }
 
-            Log.Trace("ProjectXBrokerage.Connect(): Successfully connected to ProjectX");
+                // Validate configuration
+                ValidateConfiguration();
+
+                // Attempt connection with retry logic
+                var connected = ConnectWithRetry();
+
+                if (!connected)
+                {
+                    var message = $"ProjectXBrokerage.Connect(): Failed to connect after {_maxReconnectAttempts} attempts";
+                    Log.Error(message);
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CONNECTION_FAILED", message));
+                    throw new Exception(message);
+                }
+
+                Log.Trace("ProjectXBrokerage.Connect(): Successfully connected to ProjectX");
+            }
+            finally
+            {
+                _connectionSemaphore.Release();
+            }
         }
 
         /// <summary>
@@ -268,8 +609,14 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                 return;
             }
 
+            _connectionSemaphore.Wait();
             try
             {
+                if (!IsConnected)
+                {
+                    return;
+                }
+
                 // Update connection state first to stop heartbeat loop
                 lock (_connectionLock)
                 {
@@ -297,10 +644,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     }
                 }
 
-                // TODO: Close WebSocket connections
-                // TODO: Dispose MarqSpec.Client.ProjectX resources
-                // Example:
-                // _apiClient?.Dispose();
+                CleanupClients();
 
                 // Reset cancellation token source
                 _connectionCts?.Dispose();
@@ -321,70 +665,15 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
                 // Don't throw - disconnection should always succeed
             }
-        }
-
-        #endregion
-
-        #region IDataQueueUniverseProvider
-
-        /// <summary>
-        /// Method returns a collection of Symbols that are available at the data source.
-        /// </summary>
-        /// <param name="symbol">Symbol to lookup</param>
-        /// <param name="includeExpired">Include expired contracts</param>
-        /// <param name="securityCurrency">Expected security currency(if any)</param>
-        /// <returns>Enumerable of Symbols, that are associated with the provided Symbol</returns>
-        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
-        {
-            Log.Trace($"ProjectXBrokerage.LookupSymbols(): Looking up symbols for {symbol}, IncludeExpired: {includeExpired}");
-            throw new NotImplementedException("ProjectXBrokerage.LookupSymbols(): Implementation pending Phase 2");
-        }
-
-        /// <summary>
-        /// Returns whether selection can take place or not.
-        /// </summary>
-        /// <remarks>This is useful to avoid a selection taking place during invalid times, for example IB reset times or when not connected,
-        /// because if allowed selection would fail since IB isn't running and would kill the algorithm</remarks>
-        /// <returns>True if selection can take place</returns>
-        public bool CanPerformSelection()
-        {
-            Log.Trace("ProjectXBrokerage.CanPerformSelection(): Checking if selection can be performed");
-            throw new NotImplementedException("ProjectXBrokerage.CanPerformSelection(): Implementation pending Phase 2");
-        }
-
-        #endregion
-
-        private bool CanSubscribe(Symbol symbol)
-        {
-            if (symbol.Value.IndexOfInvariant("universe", true) != -1 || symbol.IsCanonical())
+            finally
             {
-                return false;
+                _connectionSemaphore.Release();
             }
-
-            throw new NotImplementedException();
         }
 
-        /// <summary>
-        /// Adds the specified symbols to the subscription
-        /// </summary>
-        /// <param name="symbols">The symbols to be added keyed by SecurityType</param>
-        private bool Subscribe(IEnumerable<Symbol> symbols)
-        {
-            var symbolList = symbols?.ToList() ?? new List<Symbol>();
-            Log.Trace($"ProjectXBrokerage.Subscribe(): Subscribing to {symbolList.Count} symbols");
-            throw new NotImplementedException("ProjectXBrokerage.Subscribe(): Implementation pending Phase 5");
-        }
-
-        /// <summary>
-        /// Removes the specified symbols to the subscription
-        /// </summary>
-        /// <param name="symbols">The symbols to be removed keyed by SecurityType</param>
-        private bool Unsubscribe(IEnumerable<Symbol> symbols)
-        {
-            var symbolList = symbols?.ToList() ?? new List<Symbol>();
-            Log.Trace($"ProjectXBrokerage.Unsubscribe(): Unsubscribing from {symbolList.Count} symbols");
-            throw new NotImplementedException("ProjectXBrokerage.Unsubscribe(): Implementation pending Phase 5");
-        }
+        #endregion
+               
+        
 
         /// <summary>
         /// Gets the history for the requested symbols
@@ -397,11 +686,84 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             if (!CanSubscribe(request.Symbol))
             {
                 Log.Trace($"ProjectXBrokerage.GetHistory(): Cannot subscribe to {request.Symbol}");
-                return null; // Should consistently return null instead of an empty enumerable
+                return null;
             }
 
             Log.Trace($"ProjectXBrokerage.GetHistory(): Requesting history for {request.Symbol}, Start: {request.StartTimeUtc}, End: {request.EndTimeUtc}, Resolution: {request.Resolution}");
-            throw new NotImplementedException("ProjectXBrokerage.GetHistory(): Implementation pending Phase 6");
+            if (request.Resolution == Resolution.Tick)
+            {
+                Log.Trace($"ProjectXBrokerage.GetHistory(): Tick resolution is not supported by the ProjectX API. Symbol: {request.Symbol}");
+                return null;
+            }
+
+            try
+            {
+                if (!IsConnected)
+                {
+                    Log.Error("ProjectXBrokerage.GetHistory(): Not connected to ProjectX");
+                    return null;
+                }
+
+                var contractId = _symbolMapper.GetBrokerageSymbol(request.Symbol);
+
+                PxAggregateBarUnit unit;
+                int limit;
+                switch (request.Resolution)
+                {
+                    case Resolution.Second:
+                        unit = PxAggregateBarUnit.Second;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalSeconds) + 1;
+                        break;
+                    case Resolution.Minute:
+                        unit = PxAggregateBarUnit.Minute;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalMinutes) + 1;
+                        break;
+                    case Resolution.Hour:
+                        unit = PxAggregateBarUnit.Hour;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalHours) + 1;
+                        break;
+                    case Resolution.Daily:
+                        unit = PxAggregateBarUnit.Day;
+                        limit = (int)Math.Ceiling((request.EndTimeUtc - request.StartTimeUtc).TotalDays) + 1;
+                        break;
+                    default:
+                        Log.Trace($"ProjectXBrokerage.GetHistory(): Resolution {request.Resolution} is not supported");
+                        return null;
+                }
+
+                // Cap at a reasonable maximum to avoid excessive API calls
+                limit = Math.Min(limit, 10000);
+
+                var bars = _apiClient.GetHistoricalBarsAsync(
+                    contractId,
+                    request.StartTimeUtc,
+                    request.EndTimeUtc,
+                    unit,
+                    1,
+                    limit,
+                    true,
+                    false,
+                    CancellationToken.None
+                ).GetAwaiter().GetResult();
+
+                return ConvertHistoricalBars(bars, request.Symbol, request.Resolution);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.GetHistory(): Error retrieving history for {request.Symbol}");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "HISTORY_ERROR",
+                    $"Error retrieving history for {request.Symbol}: {ex.Message}"));
+                return null;
+            }
+        }
+
+        private IEnumerable<BaseData> ConvertHistoricalBars(IEnumerable<PxAggregateBar> bars, Symbol symbol, Resolution resolution)
+        {
+            var period = resolution.ToTimeSpan();
+            foreach (var bar in bars)
+            {
+                yield return new TradeBar(bar.Timestamp, symbol, bar.Open, bar.High, bar.Low, bar.Close, (decimal)bar.Volume, period);
+            }
         }
 
         #region Connection Management Helper Methods
@@ -419,13 +781,23 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             // Load environment setting
             _environment = Config.Get("brokerage-project-x-environment", "production");
+            _accountId = Config.GetInt("brokerage-project-x-account-id", 0);
 
+            LoadOptionalConfiguration();
+        }
+
+        /// <summary>
+        /// Loads optional configuration items like retries, timeouts, and base URLs
+        /// </summary>
+        private void LoadOptionalConfiguration()
+        {
             // Load retry/reconnect settings
             _maxReconnectAttempts = Config.GetInt("brokerage-project-x-reconnect-attempts", 5);
             _reconnectDelayMilliseconds = Config.GetInt("brokerage-project-x-reconnect-delay", 1000);
             _connectionTimeoutMilliseconds = Config.GetInt("brokerage-project-x-connection-timeout", 30000);
+            _baseUrl = Config.Get("brokerage-project-x-base-url", "https://gateway.projectx.com/api");
 
-            Log.Debug($"ProjectXBrokerage.LoadConfiguration(): Environment={_environment}, MaxRetries={_maxReconnectAttempts}");
+            Log.Debug($"ProjectXBrokerage.LoadConfiguration(): Environment={_environment}, MaxRetries={_maxReconnectAttempts}, AccountId={_accountId}");
         }
 
         /// <summary>
@@ -453,6 +825,11 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             if (_maxReconnectAttempts < 1 || _maxReconnectAttempts > 20)
             {
                 throw new ArgumentException($"Invalid reconnect attempts '{_maxReconnectAttempts}'. Must be between 1 and 20.");
+            }
+
+            if (_accountId <= 0)
+            {
+                throw new ArgumentException("ProjectX account ID is required. Set 'brokerage-project-x-account-id' in configuration.");
             }
 
             Log.Debug("ProjectXBrokerage.ValidateConfiguration(): Configuration is valid");
@@ -517,26 +894,50 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
             try
             {
-                // TODO: Replace with actual MarqSpec.Client.ProjectX connection code
-                // Example:
-                // _apiClient = new ProjectXClient(_apiKey, _apiSecret, _environment);
-                // await _apiClient.ConnectAsync();
-                // await _apiClient.AuthenticateAsync();
+                // Cleanup any leftover clients from a previous session
+                CleanupClients();
 
-                // TODO: Initialize WebSocket connections
-                // Example:
-                // _webSocketClient = _apiClient.CreateWebSocketClient();
-                // await _webSocketClient.ConnectAsync();
+                // Build the DI container with the ProjectX client and its dependencies
+                var services = new ServiceCollection();
+                services.AddLogging();
 
-                // TODO: Subscribe to account updates
-                // await _webSocketClient.SubscribeToAccountUpdatesAsync();
+                var configValues = new Dictionary<string, string>
+                {
+                    ["ProjectX:ApiKey"] = _apiKey,
+                    ["ProjectX:ApiSecret"] = _apiSecret,
+                    ["ProjectX:BaseUrl"] = _baseUrl
+                };
 
-                // For now, simulate successful connection
-                // This will be replaced when MarqSpec.Client.ProjectX is integrated
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(configValues)
+                    .Build();
+
+                services.AddProjectXApiClient(configuration);
+
+                _serviceProvider = services.BuildServiceProvider();
+                _apiClient = _serviceProvider.GetRequiredService<IProjectXApiClient>();
+                _wsClient = _serviceProvider.GetRequiredService<IProjectXWebSocketClient>();
+
+                // Wire up WebSocket events before connecting
+                _wsClient.ConnectionStatusChanged += OnConnectionStatusChanged;
+                _wsClient.OrderUpdateReceived += OnOrderUpdateReceived;
+                _wsClient.PriceUpdateReceived += OnPriceUpdateReceived;
+                _wsClient.TradeUpdateReceived += OnTradeUpdateReceived;
+
+                // Connect both SignalR hubs
+                _wsClient.ConnectMarketHubAsync(_connectionCts.Token).GetAwaiter().GetResult();
+                _wsClient.ConnectUserHubAsync(_connectionCts.Token).GetAwaiter().GetResult();
+
                 lock (_connectionLock)
                 {
                     _isConnected = true;
                 }
+
+                // Subscribe to real-time order updates for this account
+                SubscribeToOrderUpdates();
+
+                // Reconcile any positions that existed before this session
+                ReconcilePositions();
 
                 // Start heartbeat monitoring
                 StartHeartbeat();
@@ -545,6 +946,18 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
                 Log.Trace("ProjectXBrokerage.AttemptConnection(): Connection successful");
                 return true;
+            }
+            catch (AuthenticationException ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.AttemptConnection(): Authentication failed - check API key and secret");
+
+                lock (_connectionLock)
+                {
+                    _isConnected = false;
+                }
+
+                CleanupClients();
+                throw;
             }
             catch (Exception ex)
             {
@@ -555,6 +968,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     _isConnected = false;
                 }
 
+                CleanupClients();
                 throw;
             }
         }
@@ -585,16 +999,21 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                             break;
                         }
 
-                        // TODO: Implement actual heartbeat/ping
-                        // Example:
-                        // var pingResult = await _apiClient.PingAsync();
-                        // if (!pingResult.Success)
-                        // {
-                        //     Log.Warning("ProjectXBrokerage.Heartbeat(): Ping failed, triggering reconnection");
-                        //     await ReconnectAsync();
-                        // }
+                        if (_wsClient == null ||
+                            _wsClient.MarketHubState != ConnectionState.Connected ||
+                            _wsClient.UserHubState != ConnectionState.Connected)
+                        {
+                            throw new Exception($"WebSocket connection degraded. " +
+                                $"Market: {_wsClient?.MarketHubState}, User: {_wsClient?.UserHubState}");
+                        }
 
-                        Log.Trace("ProjectXBrokerage.Heartbeat(): Heartbeat successful");
+                        var pingOk = await _apiClient.PingAsync(CancellationToken.None);
+                        if (!pingOk)
+                        {
+                            throw new Exception("ProjectX API ping failed — service may be unreachable");
+                        }
+
+                        Log.Trace("ProjectXBrokerage.Heartbeat(): WebSocket connections and API ping healthy");
                     }
                     catch (OperationCanceledException)
                     {
@@ -642,6 +1061,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     _isConnected = false;
                 }
 
+                // Reset the cancellation token for the new connection attempt
+                if (_connectionCts == null || _connectionCts.IsCancellationRequested)
+                {
+                    _connectionCts?.Dispose();
+                    _connectionCts = new CancellationTokenSource();
+                }
+
                 // Attempt reconnection
                 var reconnected = ConnectWithRetry();
 
@@ -650,8 +1076,28 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     Log.Trace("ProjectXBrokerage.HandleReconnection(): Reconnection successful");
                     OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Information, "RECONNECTED", "Successfully reconnected to ProjectX"));
 
-                    // TODO: Resubscribe to data feeds
-                    // TODO: Resync account state
+                    // Resubscribe to order updates
+                    SubscribeToOrderUpdates();
+
+                    // Resync account state
+                    ReconcilePositions();
+
+                    // Resubscribe to all active market data feeds
+                    var contractsToResubscribe = _subscribedContractIds.Keys.ToList();
+                    Log.Debug($"ProjectXBrokerage.HandleReconnection(): Resubscribing to {contractsToResubscribe.Count} market data feed(s)");
+                    foreach (var contractId in contractsToResubscribe)
+                    {
+                        try
+                        {
+                            _wsClient.SubscribeToPriceUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                            _wsClient.SubscribeToTradeUpdatesAsync(contractId, _connectionCts.Token).GetAwaiter().GetResult();
+                            Log.Trace($"ProjectXBrokerage.HandleReconnection(): Resubscribed to {contractId}");
+                        }
+                        catch (Exception resubEx)
+                        {
+                            Log.Error(resubEx, $"ProjectXBrokerage.HandleReconnection(): Failed to resubscribe to {contractId}");
+                        }
+                    }
                 }
                 else
                 {
@@ -662,6 +1108,617 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
             finally
             {
                 _connectionSemaphore.Release();
+            }
+        }
+
+        #endregion
+
+        #region Account Synchronization Helper Methods
+
+        /// <summary>
+        /// Converts a ProjectX position to a LEAN Holding object
+        /// </summary>
+        /// <param name="projectXPosition">The ProjectX position object</param>
+        /// <summary>
+        /// Converts a ProjectX <see cref="PxPosition"/> to a LEAN <see cref="Holding"/>.
+        /// </summary>
+        private Holding ConvertFromProjectXPosition(PxPosition pxPosition)
+        {
+            var symbol = _symbolMapper.GetLeanSymbol(pxPosition.ContractId, SecurityType.Future, string.Empty);
+
+            // Long positions have positive quantity; short positions are negative
+            var quantity = pxPosition.Type == PxPositionType.Long
+                ? (decimal)pxPosition.Size
+                : -(decimal)pxPosition.Size;
+
+            Log.Debug($"ProjectXBrokerage.ConvertFromProjectXPosition(): {pxPosition.ContractId} -> {symbol}, qty={quantity}, avg={pxPosition.AveragePrice}");
+
+            return new Holding
+            {
+                Symbol = symbol,
+                Quantity = quantity,
+                AveragePrice = pxPosition.AveragePrice,
+                MarketPrice = pxPosition.AveragePrice,
+                CurrencySymbol = "$",
+                ConversionRate = 1m
+            };
+        }
+
+        /// <summary>
+        /// Reconciles positions and cash balance with ProjectX on connection.
+        /// ProjectX is the source of truth; discrepancies are logged and balance events are fired.
+        /// </summary>
+        private void ReconcilePositions()
+        {
+            try
+            {
+                Log.Trace("ProjectXBrokerage.ReconcilePositions(): Starting position reconciliation");
+
+                var holdings = GetAccountHoldings();
+                var cashBalances = GetCashBalance();
+
+                Log.Debug($"ProjectXBrokerage.ReconcilePositions(): {holdings.Count} position(s), {cashBalances.Count} cash balance(s)");
+
+                foreach (var holding in holdings)
+                {
+                    Log.Debug($"ProjectXBrokerage.ReconcilePositions(): Open position — {holding.Symbol}: qty={holding.Quantity}, avgPrice={holding.AveragePrice}");
+                }
+
+                foreach (var cash in cashBalances)
+                {
+                    Log.Debug($"ProjectXBrokerage.ReconcilePositions(): Cash balance — {cash.Amount} {cash.Currency}");
+                    OnAccountChanged(new AccountEvent(cash.Currency, cash.Amount));
+                }
+
+                Log.Trace("ProjectXBrokerage.ReconcilePositions(): Reconciliation complete");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.ReconcilePositions(): Error during position reconciliation");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "RECONCILIATION_ERROR",
+                    $"Error during position reconciliation: {ex.Message}"));
+            }
+        }
+
+        /// <summary>
+        /// Subscribes to account order update events via WebSocket
+        /// </summary>
+        private void SubscribeToOrderUpdates()
+        {
+            try
+            {
+                Log.Debug("ProjectXBrokerage.SubscribeToOrderUpdates(): Subscribing to account order updates");
+
+                _wsClient.SubscribeToOrderUpdatesAsync(_accountId, _connectionCts.Token).GetAwaiter().GetResult();
+
+                Log.Trace("ProjectXBrokerage.SubscribeToOrderUpdates(): Successfully subscribed to account order updates");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.SubscribeToOrderUpdates(): Error subscribing to account updates");
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "ACCOUNT_SUBSCRIPTION_ERROR",
+                    $"Error subscribing to account updates: {ex.Message}"));
+            }
+        }
+
+        #endregion
+
+        #region Order Management Helper Methods
+
+        /// <summary>
+        /// Validates an order before submission
+        /// </summary>
+        /// <param name="order">The order to validate</param>
+        /// <param name="errorMessage">Error message if validation fails</param>
+        /// <returns>True if order is valid, false otherwise</returns>
+        private bool ValidateOrder(Order order, out string errorMessage)
+        {
+            errorMessage = null;
+
+            try
+            {
+                // Check connection
+                if (!IsConnected)
+                {
+                    errorMessage = "Not connected to ProjectX";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
+                // Validate order object
+                if (order == null)
+                {
+                    errorMessage = "Order cannot be null";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
+                // Validate symbol
+                if (order.Symbol == null || string.IsNullOrWhiteSpace(order.Symbol.Value))
+                {
+                    errorMessage = "Order symbol is required";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
+                // Check if symbol can be subscribed (basic validation)
+                if (!CanSubscribe(order.Symbol))
+                {
+                    errorMessage = $"Symbol {order.Symbol} is not supported for trading";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
+                // Validate quantity
+                if (order.Quantity == 0)
+                {
+                    errorMessage = "Order quantity cannot be zero";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
+                // Reject orders on expired futures contracts
+                if (order.Symbol.SecurityType == SecurityType.Future &&
+                    order.Symbol.ID.Date.Date < DateTime.UtcNow.Date)
+                {
+                    errorMessage = $"Futures contract {order.Symbol.Value} has expired (expiry: {order.Symbol.ID.Date:yyyy-MM-dd})";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
+                // Validate order type support
+                switch (order.Type)
+                {
+                    case OrderType.Market:
+                    case OrderType.Limit:
+                    case OrderType.StopMarket:
+                    case OrderType.StopLimit:
+                    case OrderType.TrailingStop:
+                        // Supported order types
+                        break;
+
+                    case OrderType.MarketOnOpen:
+                    case OrderType.MarketOnClose:
+                    case OrderType.OptionExercise:
+                    case OrderType.LimitIfTouched:
+                    case OrderType.ComboMarket:
+                    case OrderType.ComboLimit:
+                    case OrderType.ComboLegLimit:
+                        errorMessage = $"Order type {order.Type} is not supported by ProjectX";
+                        Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                        return false;
+
+                    default:
+                        errorMessage = $"Unknown order type {order.Type}";
+                        Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                        return false;
+                }
+
+                // Validate Limit order has limit price
+                if (order.Type == OrderType.Limit || order.Type == OrderType.StopLimit)
+                {
+                    var limitOrder = order as Orders.LimitOrder;
+                    if (limitOrder != null && limitOrder.LimitPrice <= 0)
+                    {
+                        errorMessage = "Limit price must be greater than zero";
+                        Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                        return false;
+                    }
+                }
+
+                // Validate Stop order has stop price
+                if (order.Type == OrderType.StopMarket || order.Type == OrderType.StopLimit)
+                {
+                    var stopOrder = order as Orders.StopMarketOrder;
+                    if (stopOrder != null && stopOrder.StopPrice <= 0)
+                    {
+                        errorMessage = "Stop price must be greater than zero";
+                        Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                        return false;
+                    }
+                }
+
+                // Validate TrailingStop order has positive trailing amount
+                if (order.Type == OrderType.TrailingStop)
+                {
+                    var trailingStopOrder = order as Orders.TrailingStopOrder;
+                    if (trailingStopOrder != null && trailingStopOrder.TrailingAmount <= 0)
+                    {
+                        errorMessage = "Trailing amount must be greater than zero";
+                        Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                        return false;
+                    }
+                }
+
+                Log.Debug($"ProjectXBrokerage.ValidateOrder(): Order validation successful for OrderId={order.Id}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Validation error: {ex.Message}";
+                Log.Error(ex, $"ProjectXBrokerage.ValidateOrder(): Exception during validation for OrderId={order.Id}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks if an order is a duplicate submission
+        /// </summary>
+        /// <param name="order">The order to check</param>
+        /// <returns>True if this is a duplicate submission, false otherwise</returns>
+        private bool IsDuplicateSubmission(Order order)
+        {
+            try
+            {
+                // Check if order was recently submitted
+                if (_recentlySubmittedOrders.TryGetValue(order.Id, out var submissionTime))
+                {
+                    var timeSinceSubmission = DateTime.UtcNow - submissionTime;
+
+                    if (timeSinceSubmission < _duplicateDetectionWindow)
+                    {
+                        Log.Error($"ProjectXBrokerage.IsDuplicateSubmission(): Duplicate submission detected for OrderId={order.Id}. " +
+                                  $"Last submitted {timeSinceSubmission.TotalSeconds:F2} seconds ago.");
+                        return true;
+                    }
+                    else
+                    {
+                        // Outside detection window, remove old entry
+                        _recentlySubmittedOrders.TryRemove(order.Id, out _);
+                    }
+                }
+
+                // Cleanup old entries periodically (every 100 checks)
+                if (_recentlySubmittedOrders.Count > 100)
+                {
+                    var cutoffTime = DateTime.UtcNow - _duplicateDetectionWindow;
+                    var expiredKeys = _recentlySubmittedOrders
+                        .Where(kvp => kvp.Value < cutoffTime)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+
+                    foreach (var key in expiredKeys)
+                    {
+                        _recentlySubmittedOrders.TryRemove(key, out _);
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.IsDuplicateSubmission(): Error checking for duplicate OrderId={order.Id}");
+                // On error, allow submission (fail open)
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Adds a bidirectional order ID mapping
+        /// </summary>
+        /// <param name="leanId">LEAN order ID</param>
+        /// <param name="projectXId">ProjectX order ID</param>
+        private void AddOrderIdMapping(int leanId, long projectXId)
+        {
+            try
+            {
+                lock (_orderMappingLock)
+                {
+                    // Add to both dictionaries for bidirectional lookup
+                    _leanToProjectXOrderIds[leanId] = projectXId;
+                    _projectXToLeanOrderIds[projectXId] = leanId;
+
+                    Log.Debug($"ProjectXBrokerage.AddOrderIdMapping(): Added mapping LEAN ID={leanId} <-> ProjectX ID={projectXId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.AddOrderIdMapping(): Error adding mapping for LEAN ID={leanId}, ProjectX ID={projectXId}");
+            }
+        }
+
+        /// <summary>
+        /// Removes an order ID mapping (both directions)
+        /// </summary>
+        /// <param name="leanId">LEAN order ID to remove</param>
+        private void RemoveOrderIdMapping(int leanId)
+        {
+            try
+            {
+                lock (_orderMappingLock)
+                {
+                    // Remove from both dictionaries
+                    if (_leanToProjectXOrderIds.TryRemove(leanId, out var projectXId))
+                    {
+                        _projectXToLeanOrderIds.TryRemove(projectXId, out _);
+                        Log.Debug($"ProjectXBrokerage.RemoveOrderIdMapping(): Removed mapping for LEAN ID={leanId}, ProjectX ID={projectXId}");
+                    }
+                    else
+                    {
+                        Log.Debug($"ProjectXBrokerage.RemoveOrderIdMapping(): No mapping found for LEAN ID={leanId}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.RemoveOrderIdMapping(): Error removing mapping for LEAN ID={leanId}");
+            }
+        }
+
+        /// <summary>
+        /// Converts a LEAN Order to ProjectX order format
+        /// </summary>
+        /// <param name="order">LEAN order to convert</param>
+        /// <returns>ProjectX order request object</returns>
+        private PlaceOrderRequest ConvertToProjectXOrder(Order order)
+        {
+            var side = order.Direction == OrderDirection.Buy ? PxOrderSide.Bid : PxOrderSide.Ask;
+            var pxType = ConvertToProjectXOrderType(order.Type);
+
+            // Phase 3: replace order.Symbol.Value with _symbolMapper.GetBrokerageSymbol(order.Symbol)
+            var request = new PlaceOrderRequest
+            {
+                AccountId = _accountId,
+                ContractId = _symbolMapper.GetBrokerageSymbol(order.Symbol),
+                Type = pxType,
+                Side = side,
+                Size = (int)Math.Abs(order.Quantity),
+                CustomTag = order.Id.ToString()
+            };
+
+            if (order is LimitOrder limitOrder)
+                request.LimitPrice = limitOrder.LimitPrice;
+            else if (order is StopLimitOrder stopLimitOrder)
+            {
+                request.LimitPrice = stopLimitOrder.LimitPrice;
+                request.StopPrice = stopLimitOrder.StopPrice;
+            }
+            else if (order is StopMarketOrder stopMarketOrder)
+                request.StopPrice = stopMarketOrder.StopPrice;
+            else if (order is TrailingStopOrder trailingStopOrder)
+                request.TrailPrice = trailingStopOrder.TrailingAmount;
+
+            Log.Debug($"ProjectXBrokerage.ConvertToProjectXOrder(): LEAN {order.Id} -> ContractId={request.ContractId}, Type={pxType}, Side={side}, Size={request.Size}");
+            return request;
+        }
+
+        /// <summary>
+        /// Converts a ProjectX order to LEAN Order format
+        /// </summary>
+        /// <param name="projectXOrder">ProjectX order object</param>
+        /// <returns>LEAN Order object</returns>
+        private Order ConvertFromProjectXOrder(PxOrder pxOrder)
+        {
+            // Phase 3: replace with _symbolMapper.GetLeanSymbol(pxOrder.ContractId, SecurityType.Future, Market.USA)
+            var symbol = _symbolMapper.GetLeanSymbol(pxOrder.ContractId, SecurityType.Future, string.Empty);
+
+            var qty = (decimal)pxOrder.Size * (pxOrder.Side == PxOrderSide.Bid ? 1m : -1m);
+            var time = pxOrder.CreationTimestamp;
+
+            Order leanOrder;
+            switch (pxOrder.Type)
+            {
+                case PxOrderType.Market:
+                    leanOrder = new MarketOrder(symbol, qty, time);
+                    break;
+                case PxOrderType.Limit:
+                    leanOrder = new LimitOrder(symbol, qty, pxOrder.LimitPrice ?? 0m, time);
+                    break;
+                case PxOrderType.Stop:
+                    leanOrder = new StopMarketOrder(symbol, qty, pxOrder.StopPrice ?? 0m, time);
+                    break;
+                case PxOrderType.StopLimit:
+                    leanOrder = new StopLimitOrder(symbol, qty, pxOrder.StopPrice ?? 0m, pxOrder.LimitPrice ?? 0m, time);
+                    break;
+                case PxOrderType.TrailingStop:
+                    leanOrder = new TrailingStopOrder(symbol, qty, pxOrder.StopPrice ?? 0m, 0m, false, time);
+                    break;
+                default:
+                    throw new NotSupportedException($"ProjectX order type '{pxOrder.Type}' is not supported");
+            }
+
+            leanOrder.BrokerId.Add(pxOrder.Id.ToString());
+
+            // If placed through this brokerage, recover the LEAN order ID from CustomTag and update caches
+            if (!string.IsNullOrEmpty(pxOrder.CustomTag) && int.TryParse(pxOrder.CustomTag, out var leanId))
+            {
+                AddOrderIdMapping(leanId, pxOrder.Id);
+                _ordersCache[pxOrder.Id] = leanOrder;
+            }
+
+            Log.Debug($"ProjectXBrokerage.ConvertFromProjectXOrder(): ProjectX {pxOrder.Id} -> {leanOrder.Type}, Qty={qty}, Symbol={symbol}");
+            return leanOrder;
+        }
+
+        /// <summary>
+        /// Handles order rejection by firing appropriate events
+        /// </summary>
+        /// <param name="order">The rejected order</param>
+        /// <param name="errorCode">ProjectX error code</param>
+        /// <param name="errorMessage">Error message from ProjectX</param>
+        private void HandleOrderRejection(Order order, string errorCode, string errorMessage)
+        {
+            try
+            {
+                var fullMessage = $"Order rejected by ProjectX. Code: {errorCode}, Message: {errorMessage}";
+                Log.Error($"ProjectXBrokerage.HandleOrderRejection(): OrderId={order.Id}, {fullMessage}");
+
+                // Fire order event with Invalid status
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "ProjectX Order Rejected")
+                {
+                    Status = OrderStatus.Invalid,
+                    Message = fullMessage
+                });
+
+                // Fire brokerage message for user notification
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, errorCode, fullMessage));
+
+                // Remove from recently submitted (if present)
+                _recentlySubmittedOrders.TryRemove(order.Id, out _);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.HandleOrderRejection(): Error handling rejection for OrderId={order.Id}");
+            }
+        }
+
+        #endregion
+
+        #region WebSocket Event Handlers
+
+        /// <summary>
+        /// Handles WebSocket connection status changes; triggers reconnection on failure.
+        /// </summary>
+        private void OnConnectionStatusChanged(object sender, ConnectionStatusChange e)
+        {
+            Log.Debug($"ProjectXBrokerage.OnConnectionStatusChanged(): {e.PreviousState} -> {e.CurrentState}");
+
+            if ((e.CurrentState == ConnectionState.Failed || e.CurrentState == ConnectionState.Disconnected) && IsConnected)
+            {
+                Log.Error($"ProjectXBrokerage.OnConnectionStatusChanged(): Connection lost. Error: {e.ErrorMessage}");
+                _ = Task.Run(() => HandleReconnection());
+            }
+        }
+
+        /// <summary>
+        /// Handles real-time order update events from the ProjectX WebSocket.
+        /// </summary>
+        private void OnOrderUpdateReceived(object sender, PxOrderUpdate e)
+        {
+            try
+            {
+                Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): OrderId={e.OrderId}, Status={e.Status}");
+
+                if (!_ordersCache.TryGetValue(e.OrderId, out var order))
+                {
+                    // Cache miss — attempt REST recovery using GetOrderAsync (new in 1.0.3)
+                    Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): Cache miss for ProjectX ID={e.OrderId}, attempting REST recovery");
+                    try
+                    {
+                        var pxOrder = _apiClient.GetOrderAsync(_accountId, e.OrderId, CancellationToken.None).GetAwaiter().GetResult();
+                        if (pxOrder != null)
+                        {
+                            order = ConvertFromProjectXOrder(pxOrder);
+                            _ordersCache[e.OrderId] = order;
+                        }
+                    }
+                    catch (Exception restEx)
+                    {
+                        Log.Error(restEx, $"ProjectXBrokerage.OnOrderUpdateReceived(): REST recovery failed for ProjectX ID={e.OrderId}");
+                    }
+
+                    if (order == null)
+                    {
+                        Log.Debug($"ProjectXBrokerage.OnOrderUpdateReceived(): No LEAN order found for ProjectX ID={e.OrderId}. Skipping update.");
+                        return;
+                    }
+                }
+
+                var leanStatus = ConvertOrderStatus(e.Status);
+                var fillPrice = e.AverageFillPrice ?? 0m;
+                var filledQty = (decimal)e.FilledQuantity;
+                var signedFillQty = filledQty * (order.Direction == Orders.OrderDirection.Buy ? 1m : -1m);
+
+                string eventMessage;
+                if (!string.IsNullOrEmpty(e.RejectionReason))
+                    eventMessage = $"ProjectX Rejected: {e.RejectionReason}";
+                else if (!string.IsNullOrEmpty(e.Message))
+                    eventMessage = $"ProjectX: {e.Status} — {e.Message}";
+                else
+                    eventMessage = $"ProjectX: {e.Status}";
+
+                var orderEvent = new OrderEvent(order, e.Timestamp, OrderFee.Zero, eventMessage)
+                {
+                    Status = leanStatus,
+                    FillPrice = fillPrice,
+                    FillQuantity = signedFillQty
+                };
+
+                OnOrderEvent(orderEvent);
+
+                // Clean up mappings for terminal states
+                if (leanStatus == OrderStatus.Filled || leanStatus == OrderStatus.Canceled || leanStatus == OrderStatus.Invalid)
+                {
+                    _ordersCache.TryRemove(e.OrderId, out _);
+                    RemoveOrderIdMapping(order.Id);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"ProjectXBrokerage.OnOrderUpdateReceived(): Error processing update for ProjectX order {e.OrderId}");
+            }
+        }
+
+        /// <summary>
+        /// Maps a LEAN <see cref="OrderType"/> to the equivalent ProjectX <see cref="PxOrderType"/>.
+        /// </summary>
+        private static PxOrderType ConvertToProjectXOrderType(OrderType orderType)
+        {
+            switch (orderType)
+            {
+                case OrderType.Market:    return PxOrderType.Market;
+                case OrderType.Limit:     return PxOrderType.Limit;
+                case OrderType.StopMarket: return PxOrderType.Stop;
+                case OrderType.StopLimit: return PxOrderType.StopLimit;
+                case OrderType.TrailingStop: return PxOrderType.TrailingStop;
+                default:
+                    throw new NotSupportedException($"LEAN OrderType.{orderType} is not supported by ProjectX");
+            }
+        }
+
+        /// <summary>
+        /// Maps a ProjectX <see cref="PxOrderStatus"/> to the equivalent LEAN <see cref="OrderStatus"/>.
+        /// </summary>
+        private static OrderStatus ConvertOrderStatus(PxOrderStatus status)
+        {
+            switch (status)
+            {
+                case PxOrderStatus.Accepted:
+                case PxOrderStatus.Pending:
+                    return OrderStatus.Submitted;
+                case PxOrderStatus.Triggered:
+                case PxOrderStatus.PartiallyFilled:
+                    return OrderStatus.PartiallyFilled;
+                case PxOrderStatus.Filled:
+                    return OrderStatus.Filled;
+                case PxOrderStatus.Cancelled:
+                    return OrderStatus.Canceled;
+                case PxOrderStatus.Rejected:
+                    return OrderStatus.Invalid;
+                case PxOrderStatus.Expired:
+                    return OrderStatus.Canceled;
+                default:
+                    Log.Debug($"ProjectXBrokerage.ConvertOrderStatus(): Unknown status '{status}', returning None");
+                    return OrderStatus.None;
+            }
+        }
+
+        #endregion
+
+        #region Client Lifecycle
+
+        /// <summary>
+        /// Unwires events and disposes WebSocket and DI service provider.
+        /// </summary>
+        private void CleanupClients()
+        {
+            try
+            {
+                if (_wsClient != null)
+                {
+                    _wsClient.ConnectionStatusChanged -= OnConnectionStatusChanged;
+                    _wsClient.OrderUpdateReceived -= OnOrderUpdateReceived;
+                    _wsClient.PriceUpdateReceived -= OnPriceUpdateReceived;
+                    _wsClient.TradeUpdateReceived -= OnTradeUpdateReceived;
+                }
+                _serviceProvider?.Dispose();
+                _serviceProvider = null;
+                _apiClient = null;
+                _wsClient = null;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ProjectXBrokerage.CleanupClients(): Error during client cleanup");
             }
         }
 
