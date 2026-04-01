@@ -51,14 +51,13 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
 
         /// <summary>
         /// Gets the fee model for the given security.
-        /// For now, this returns a zero-fee model. A detailed implementation is planned for Phase 8.
+        /// Returns a <see cref="ProjectXFeeModel"/> that applies TopstepX NFA and clearing fees.
         /// </summary>
         /// <param name="security">The security to get a fee model for</param>
         /// <returns>The fee model for this security</returns>
         public override IFeeModel GetFeeModel(Security security)
         {
-            // A full implementation is planned for Phase 8.
-            return new ConstantFeeModel(0);
+            return new ProjectXFeeModel();
         }
     }
 }
