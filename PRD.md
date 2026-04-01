@@ -433,28 +433,28 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 **Objective:** Enable bulk historical data downloads
 
 **Tasks:**
-- [ ] **IDataDownloader Implementation**
-  - [ ] `Get()` - Download data for date range
-  - [ ] Support DataDownloaderGetParameters
+- [x] **IDataDownloader Implementation**
+  - [x] `Get()` - Download data for date range
+  - [x] Support DataDownloaderGetParameters
 
-- [ ] **Bulk Download Utilities**
-  - [ ] Command-line tool integration
-  - [ ] Batch download for multiple symbols
+- [x] **Bulk Download Utilities**
+  - [x] Command-line tool integration
+  - [x] Batch download for multiple symbols
   - [ ] Progress tracking and resumption
 
-- [ ] **Data Format Conversion**
-  - [ ] Convert ProjectX format to LEAN format
-  - [ ] Write to LEAN directory structure
-  - [ ] Compress data files (zip)
+- [x] **Data Format Conversion**
+  - [x] Convert ProjectX format to LEAN format
+  - [x] Write to LEAN directory structure
+  - [x] Compress data files (zip)
 
-- [ ] **Universe Generation**
-  - [ ] Generate futures universe files
+- [x] **Universe Generation**
+  - [x] Generate futures universe files
   - [ ] Contract expiration calendars
   - [ ] Symbol mapping files
 
 **Deliverables:**
-- [ ] Functional data downloader
-- [ ] ToolBox command-line interface
+- [x] Functional data downloader
+- [x] ToolBox command-line interface
 - [ ] Download scripts and documentation
 - [ ] Sample universe files
 
