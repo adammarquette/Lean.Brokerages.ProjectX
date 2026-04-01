@@ -16,6 +16,7 @@
 using System;
 using System.Linq;
 using NUnit.Framework;
+using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Tests;
 using QuantConnect.Logging;
@@ -25,34 +26,45 @@ using QuantConnect.Lean.Engine.HistoricalData;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
-    [TestFixture, Ignore("Not implemented")]
+    [TestFixture, Category("Integration")]
     public class ProjectXBrokerageHistoryProviderTests
     {
+        // Front-month ES futures — expires third Friday of Mar/Jun/Sep/Dec
+        private static Symbol FrontMonthES => ProjectXBrokerageTestsHelper.GetFrontMonthES();
+
+        [SetUp]
+        public void CheckCredentials()
+        {
+            var apiKey = QuantConnect.Configuration.Config.Get("brokerage-project-x-api-key", string.Empty);
+            Assume.That(!string.IsNullOrEmpty(apiKey),
+                "Skipping: brokerage-project-x-api-key not configured. " +
+                "Set the QC_BROKERAGE_PROJECT_X_API_KEY environment variable to run integration tests.");
+        }
+
         private static TestCaseData[] TestParameters
         {
             get
             {
                 TestGlobals.Initialize();
+                TestSetup.ReloadConfiguration();
+                var es = ProjectXBrokerageTestsHelper.GetFrontMonthES();
 
                 return
                 [
-                    // valid parameters, example:
-                    new TestCaseData(Symbols.BTCUSD, Resolution.Tick, TimeSpan.FromMinutes(1), TickType.Quote, typeof(Tick), false),
-                    new TestCaseData(Symbols.BTCUSD, Resolution.Minute, TimeSpan.FromMinutes(10), TickType.Quote, typeof(QuoteBar), false),
-                    new TestCaseData(Symbols.BTCUSD, Resolution.Daily, TimeSpan.FromDays(10), TickType.Quote, typeof(QuoteBar), false),
+                    // ES futures — minute trade bars
+                    new TestCaseData(es, Resolution.Minute, TimeSpan.FromMinutes(30), TickType.Trade, typeof(TradeBar), false),
 
-                    new TestCaseData(Symbols.BTCUSD, Resolution.Tick, TimeSpan.FromMinutes(1), TickType.Trade, typeof(Tick), false),
-                    new TestCaseData(Symbols.BTCUSD, Resolution.Minute, TimeSpan.FromMinutes(10), TickType.Trade, typeof(TradeBar), false),
-                    new TestCaseData(Symbols.BTCUSD, Resolution.Daily, TimeSpan.FromDays(10), TickType.Trade, typeof(TradeBar), false),
+                    // ES futures — hourly trade bars
+                    new TestCaseData(es, Resolution.Hour, TimeSpan.FromHours(8), TickType.Trade, typeof(TradeBar), false),
 
-                    // invalid parameter, validate SecurityType more accurate
-                    new TestCaseData(Symbols.SPY, Resolution.Hour, TimeSpan.FromHours(14), TickType.Quote, typeof(QuoteBar), true),
+                    // ES futures — daily trade bars
+                    new TestCaseData(es, Resolution.Daily, TimeSpan.FromDays(10), TickType.Trade, typeof(TradeBar), false),
 
-                    /// New Listed Symbol on Brokerage <see cref="Slice.SymbolChangedEvents"/>
-                    new TestCaseData(Symbol.Create("SUSHIGBP", SecurityType.Crypto, Market.Coinbase), Resolution.Minute, TimeSpan.FromHours(2), TickType.Trade, typeof(TradeBar), false),
+                    // ES futures — minute quote bars
+                    new TestCaseData(es, Resolution.Minute, TimeSpan.FromMinutes(30), TickType.Quote, typeof(QuoteBar), false),
 
-                    /// Symbol was delisted form Brokerage (can return history data or not) <see cref="Slice.Delistings"/>
-                    new TestCaseData(Symbol.Create("SNTUSD", SecurityType.Crypto, Market.Coinbase), Resolution.Daily, TimeSpan.FromDays(14), TickType.Trade, typeof(TradeBar), true),
+                    // Invalid: equity not supported
+                    new TestCaseData(Symbols.SPY, Resolution.Hour, TimeSpan.FromHours(14), TickType.Trade, typeof(TradeBar), true),
                 ];
             }
         }
@@ -60,7 +72,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
         [Test, TestCaseSource(nameof(TestParameters))]
         public void GetsHistory(Symbol symbol, Resolution resolution, TimeSpan period, TickType tickType, Type dataType, bool invalidRequest)
         {
-            var brokerage = new ProjectXBrokerage(null);
+            var brokerage = new ProjectXBrokerage(new TestDataAggregator());
 
             var historyProvider = new BrokerageHistoryProvider();
             historyProvider.SetBrokerage(brokerage);

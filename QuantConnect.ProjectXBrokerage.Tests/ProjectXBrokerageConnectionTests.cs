@@ -20,6 +20,8 @@ using NUnit.Framework;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
+using QuantConnect.Orders;
+using QuantConnect.Securities;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
@@ -38,6 +40,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Set("brokerage-project-x-reconnect-attempts", "3");
             Config.Set("brokerage-project-x-reconnect-delay", "100");
             Config.Set("brokerage-project-x-connection-timeout", "5000");
+            Config.Set("brokerage-project-x-account-id", "12345");
 
             _aggregator = new TestDataAggregator();
         }
@@ -111,7 +114,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual(0, exceptions, "Thread-safe access should not throw exceptions");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_WithValidConfiguration_Succeeds()
         {
             // Arrange
@@ -124,7 +127,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Should be connected after Connect()");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_WhenAlreadyConnected_DoesNotThrow()
         {
             // Arrange
@@ -172,7 +175,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.That(exception.Message, Does.Contain("Invalid environment"));
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Disconnect_WhenConnected_Succeeds()
         {
             // Arrange
@@ -198,7 +201,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Disconnect(), "Disconnecting when not connected should not throw");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Disconnect_WhenAlreadyDisconnected_DoesNotThrow()
         {
             // Arrange
@@ -211,7 +214,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Disconnect(), "Disconnecting when already disconnected should not throw");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void ConnectDisconnectCycle_Multiple_Succeeds()
         {
             // Arrange
@@ -228,13 +231,14 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             }
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_WithDefaultValues_LoadsCorrectly()
         {
             // Arrange
             Config.Reset();
             Config.Set("brokerage-project-x-api-key", "test-key");
             Config.Set("brokerage-project-x-api-secret", "test-secret");
+            Config.Set("brokerage-project-x-account-id", "12345");
             // Don't set optional values, let defaults apply
 
             // Act
@@ -245,7 +249,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Should connect with default configuration values");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_SandboxEnvironment_Accepted()
         {
             // Arrange
@@ -256,7 +260,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Sandbox environment should be valid");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_ProductionEnvironment_Accepted()
         {
             // Arrange
@@ -282,6 +286,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Reset();
             Config.Set("brokerage-project-x-api-key", "test-key");
             Config.Set("brokerage-project-x-api-secret", "test-secret");
+            Config.Set("brokerage-project-x-account-id", "12345");
             Config.Set("brokerage-project-x-reconnect-attempts", "25");
             var brokerage2 = new ProjectXBrokerage(_aggregator);
 
@@ -303,7 +308,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual("ProjectXBrokerage", name);
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Brokerage_Dispose_DisconnectsIfConnected()
         {
             // Arrange
@@ -321,7 +326,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Dispose());
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Heartbeat_AfterConnection_ShouldStart()
         {
             // Arrange
@@ -335,7 +340,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Should remain connected with heartbeat running");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Disconnect_StopsHeartbeat_Successfully()
         {
             // Arrange
@@ -351,7 +356,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsFalse(brokerage.IsConnected, "Should be disconnected");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_ValidRetrySettings_LoadCorrectly()
         {
             // Arrange
@@ -366,7 +371,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Valid retry settings should work");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_MinimumRetryAttempts_Accepted()
         {
             // Arrange
@@ -377,7 +382,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Minimum retry attempts (1) should be valid");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Configuration_MaximumRetryAttempts_Accepted()
         {
             // Arrange
@@ -388,7 +393,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Connect(), "Maximum retry attempts (20) should be valid");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void IsConnected_ConcurrentReadsDuringStateChange_NoExceptions()
         {
             // Arrange
@@ -437,7 +442,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual(0, exceptions, "Concurrent reads during state changes should not throw");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_MultipleThreadsSimultaneously_OneSucceeds()
         {
             // Arrange
@@ -476,7 +481,56 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.Greater(successCount, 0, "At least one thread should succeed");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
+        public void ConnectDisconnect_ConcurrentCalls_NoDeadlockOrException()
+        {
+            // Arrange
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            var exceptions = 0;
+            var barrier = new Barrier(2);
+
+            // Act
+            var connectThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for(int i = 0; i < 5; i++)
+                    {
+                        brokerage.Connect();
+                        Thread.Sleep(10);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            var disconnectThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for(int i = 0; i < 5; i++)
+                    {
+                        brokerage.Disconnect();
+                        Thread.Sleep(10);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            connectThread.Start();
+            disconnectThread.Start();
+
+            var connectFinished = connectThread.Join(TimeSpan.FromSeconds(10));
+            var disconnectFinished = disconnectThread.Join(TimeSpan.FromSeconds(10));
+
+            // Assert
+            Assert.AreEqual(0, exceptions, "Concurrent connect/disconnect should not throw exceptions.");
+            Assert.IsTrue(connectFinished, "Connect thread should have finished (no deadlock).");
+            Assert.IsTrue(disconnectFinished, "Disconnect thread should have finished (no deadlock).");
+        }
+
+        [Test, Category("RequiresApiCredentials")]
         public void MessageEvent_OnSuccessfulConnection_Fired()
         {
             // Arrange
@@ -498,7 +552,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.AreEqual("CONNECTED", messageCode, "Should receive CONNECTED message");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void MessageEvent_OnDisconnection_Fired()
         {
             // Arrange
@@ -544,7 +598,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.DoesNotThrow(() => brokerage.Dispose());
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Dispose_MultipleTimes_DoesNotThrow()
         {
             // Arrange
@@ -595,7 +649,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.That(exception.Message, Does.Contain("Invalid environment"));
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Connect_AfterPreviousFailure_CanRetry()
         {
             // Arrange
@@ -620,7 +674,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage2.IsConnected);
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void Heartbeat_MaintainsConnection_OverTime()
         {
             // Arrange
@@ -634,7 +688,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Assert.IsTrue(brokerage.IsConnected, "Connection should remain active with heartbeat");
         }
 
-        [Test]
+        [Test, Category("RequiresApiCredentials")]
         public void ConnectDisconnect_RapidCycles_HandleGracefully()
         {
             // Arrange
@@ -672,6 +726,108 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 
             // Act & Assert
             Assert.DoesNotThrow(() => new ProjectXBrokerage(_aggregator));
+        }
+
+        [Test]
+        public void Subscribe_UnsubscribeConcurrently_NoDeadlock()
+        {
+            // Arrange — uses placeholder config without live credentials
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            var exceptions = 0;
+            var barrier = new Barrier(2);
+            var symbol1 = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
+            var symbol2 = Symbol.CreateFuture("NQ", Market.CME, new DateTime(2025, 3, 21));
+
+            // Act — one thread subscribes while another unsubscribes
+            var subThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for (int i = 0; i < 20; i++)
+                    {
+                        // Subscribe is a no-op without a live connection; just shouldn't throw
+                        try { brokerage.Subscribe(new SubscriptionDataConfig(
+                            typeof(QuantConnect.Data.Market.TradeBar), symbol1,
+                            Resolution.Minute, TimeZones.Utc, TimeZones.Utc, false, false, false), (s, e) => { }); }
+                        catch { /* expected if not connected */ }
+                        Thread.Sleep(5);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            var unsubThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for (int i = 0; i < 20; i++)
+                    {
+                        try { brokerage.Unsubscribe(new SubscriptionDataConfig(
+                            typeof(QuantConnect.Data.Market.TradeBar), symbol2,
+                            Resolution.Minute, TimeZones.Utc, TimeZones.Utc, false, false, false)); }
+                        catch { /* expected if not connected */ }
+                        Thread.Sleep(5);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            subThread.Start();
+            unsubThread.Start();
+
+            var subDone   = subThread.Join(TimeSpan.FromSeconds(10));
+            var unsubDone = unsubThread.Join(TimeSpan.FromSeconds(10));
+
+            Assert.IsTrue(subDone,   "Subscribe thread deadlocked");
+            Assert.IsTrue(unsubDone, "Unsubscribe thread deadlocked");
+            Assert.AreEqual(0, exceptions, "Concurrent subscribe/unsubscribe should not throw unexpected exceptions");
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void PlaceOrder_ConcurrentCalls_NoRaceCondition()
+        {
+            // Arrange
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            brokerage.Connect();
+
+            var symbol = Symbol.CreateFuture("ES", Market.CME,
+                ProjectXBrokerageTestsHelper.GetThirdFriday(DateTime.UtcNow.Year + 1, 3));
+            var exceptions = 0;
+            var successCount = 0;
+            var threads = new Thread[5];
+            var barrier = new Barrier(threads.Length);
+
+            // Act — place cancellable far-OTM limit orders concurrently
+            for (int i = 0; i < threads.Length; i++)
+            {
+                var orderId = i + 1;
+                threads[i] = new Thread(() =>
+                {
+                    try
+                    {
+                        var order = new QuantConnect.Orders.LimitOrder(
+                            symbol, 1, limitPrice: 100m, time: DateTime.UtcNow);
+                        barrier.SignalAndWait();
+                        if (brokerage.PlaceOrder(order))
+                            Interlocked.Increment(ref successCount);
+                    }
+                    catch { Interlocked.Increment(ref exceptions); }
+                });
+                threads[i].Start();
+            }
+
+            foreach (var t in threads) t.Join();
+
+            // Cancel all open orders to clean up
+            foreach (var o in brokerage.GetOpenOrders())
+                brokerage.CancelOrder(o);
+
+            brokerage.Disconnect();
+
+            Assert.AreEqual(0, exceptions, "No unexpected exceptions in concurrent PlaceOrder");
+            Assert.Greater(successCount, 0, "At least one order should be placed successfully");
         }
     }
 

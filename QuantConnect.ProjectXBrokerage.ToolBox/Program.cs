@@ -13,7 +13,12 @@
  * limitations under the License.
 */
 
+using System;
+using System.Globalization;
 using QuantConnect.ToolBox;
+using QuantConnect.Data;
+using QuantConnect.Logging;
+using QuantConnect.Securities;
 using QuantConnect.Configuration;
 using static QuantConnect.Configuration.ApplicationParser;
 
@@ -37,12 +42,49 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.ToolBox
             var targetAppName = targetApp.ToString();
             if (targetAppName.Contains("download") || targetAppName.Contains("dl"))
             {
-                var downloader = new ProjectXBrokerageDownloader();
+                var tickers = GetParameterOrExit(optionsObject, "tickers");
+                var resolutionParam = GetParameterOrExit(optionsObject, "resolution");
+                var fromDate = GetParameterOrExit(optionsObject, "from-date");
+                var toDate = GetParameterOrExit(optionsObject, "to-date");
+
+                var resolution = (Resolution)Enum.Parse(typeof(Resolution), resolutionParam, true);
+                var startUtc = DateTime.ParseExact(fromDate, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+                var endUtc = DateTime.ParseExact(toDate, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+
+                var symbolMapper = new ProjectXSymbolMapper();
+
+                using var downloader = new ProjectXBrokerageDownloader();
+
+                foreach (var ticker in tickers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    Symbol symbol;
+                    try
+                    {
+                        symbol = symbolMapper.GetLeanSymbol(ticker, SecurityType.Future, string.Empty);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, $"Program.Main(): Failed to map ticker '{ticker}' to a LEAN symbol. Skipping.");
+                        continue;
+                    }
+
+                    var parameters = new DataDownloaderGetParameters(symbol, resolution, startUtc, endUtc);
+                    var bars = downloader.Get(parameters);
+
+                    if (bars == null)
+                    {
+                        Log.Trace($"Program.Main(): No data returned for {ticker}. Skipping.");
+                        continue;
+                    }
+
+                    new LeanDataWriter(resolution, symbol, Globals.DataFolder).Write(bars);
+                    Log.Trace($"Program.Main(): Download complete for {ticker}");
+                }
             }
             else if (targetAppName.Contains("updater") || targetAppName.EndsWith("spu"))
             {
-                new ExchangeInfoUpdater(new ProjectXBrokerageExchangeInfoDownloader())
-                    .Run();
+                using var eid = new ProjectXBrokerageExchangeInfoDownloader();
+                new ExchangeInfoUpdater(eid).Run();
             }
             else
             {
