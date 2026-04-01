@@ -1,7 +1,3 @@
-Here is the updated README.md content reflecting the current state of the project and PRD.md:
-
----
-
 # ProjectX Lean Brokerage
 
 [![Build Status](https://github.com/adammarquette/Lean.Brokerages.ProjectX/actions/workflows/build.yml/badge.svg)](https://github.com/adammarquette/Lean.Brokerages.ProjectX/actions)
