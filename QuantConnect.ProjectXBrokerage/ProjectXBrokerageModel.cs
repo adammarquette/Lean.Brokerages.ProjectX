@@ -57,8 +57,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
         /// <returns>The fee model for this security</returns>
         public override IFeeModel GetFeeModel(Security security)
         {
-            // A full implementation is planned for Phase 8.
-            return new ConstantFeeModel(0);
+            return new ProjectXFeeModel();
         }
     }
 }
