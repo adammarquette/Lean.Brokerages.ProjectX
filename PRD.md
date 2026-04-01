@@ -459,38 +459,95 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
 - [ ] Sample universe files
 
 ### Phase 8: Fee Modeling
-**Objective:** Accurate commission and fee calculations
+**Objective:** Accurate NFA & clearing fee calculations matching TopstepX live market conditions
+
+**Fee Model Notes:**
+- TopstepX charges **no commissions** — only NFA & Clearing fees
+- Fees are **round-turn** (RT): charged when both sides of a trade are completed; each fill incurs half the RT fee (per-side)
+- Per-side fee: `quantity × (RT fee ÷ 2)`
+- Source: [TopstepX Commissions & Fees](https://help.topstep.com/en/articles/14363528-topstepx-commissions-fees)
+
+**Round-Turn Fee Schedule (per contract):**
+
+| Product | Symbol | RT Fee |
+|---------|--------|--------|
+| **CME Equity Futures** | | |
+| E-mini S&P 500 | ES | $2.80 |
+| Micro E-mini S&P 500 | MES | $0.74 |
+| E-mini NASDAQ 100 | NQ | $2.80 |
+| Micro E-mini NASDAQ 100 | MNQ | $0.74 |
+| E-mini Russell 2000 | RTY | $2.80 |
+| Micro E-mini Russell 2000 | M2K | $0.74 |
+| Nikkei | NKD | $4.34 |
+| Micro E-mini Bitcoin | MBT | $2.34 |
+| Micro E-mini Ether | MET | $0.24 |
+| **CME CBOT Equity Futures** | | |
+| Mini-DOW | YM | $2.80 |
+| Micro Mini-DOW | MYM | $0.74 |
+| **CME NYMEX Futures** | | |
+| Crude Oil | CL | $3.04 |
+| Micro Crude Oil | MCL | $1.04 |
+| E-mini Crude Oil | QM | $2.44 |
+| Platinum | PL | $3.24 |
+| E-mini Natural Gas | QG | $1.04 |
+| RBOB Gasoline | RB | $3.04 |
+| Heating Oil | HO | $3.04 |
+| Natural Gas | NG | $3.20 |
+| Micro Henry Hub Natural Gas | MNG | $1.24 |
+| **CME COMEX Futures** | | |
+| Gold | GC | $3.24 |
+| Micro Gold | MGC | $1.24 |
+| Silver | SI | $3.24 |
+| Micro Silver | SIL | $2.04 |
+| Copper | HG | $3.24 |
+| Micro Copper | MHG | $1.24 |
+| **CME Foreign Exchange Futures** | | |
+| Euro FX | 6E | $3.24 |
+| Micro EUR/USD | M6E | $0.52 |
+| Japanese Yen | 6J | $3.24 |
+| British Pound | 6B | $3.24 |
+| Micro GBP/USD | M6B | $0.52 |
+| Australian Dollar | 6A | $3.24 |
+| Micro AUD/USD | M6A | $0.52 |
+| Canadian Dollar | 6C | $3.24 |
+| Swiss Franc | 6S | $3.24 |
+| New Zealand Dollar | 6N | $3.24 |
+| Mexican Peso | 6M | $3.24 |
+| E-mini Euro FX | E7 | $1.74 |
+| **CME CBOT Financial / Interest Rate Futures** | | |
+| 2-Year Note | ZT | $1.34 |
+| 5-Year Note | ZF | $1.34 |
+| 10-Year Note | ZN | $1.60 |
+| 30-Year Bond | ZB | $1.78 |
+| Ultra-Bond | UB | $1.94 |
+| Ultra-Note | TN | $1.64 |
+| **CME Agricultural Futures** | | |
+| Lean Hogs | HE | $4.24 |
+| Live Cattle | LE | $4.24 |
+| **CME CBOT Commodity Futures** | | |
+| Corn | ZC | $4.30 |
+| Wheat | ZW | $4.30 |
+| Soybean | ZS | $4.30 |
+| Soybean Meal | ZM | $4.30 |
+| Soybean Oil | ZL | $4.30 |
 
 **Tasks:**
-- [ ] **IFeeModel Implementation**
-  - [ ] `GetOrderFee()` - Calculate total fees for order
+- [x] **IFeeModel Implementation**
+  - [x] Create `ProjectXFeeModel : FeeModel` in `QuantConnect.ProjectXBrokerage/`
+  - [x] `GetOrderFee()` — look up symbol root in RT fee table, return `quantity × (RT fee ÷ 2)`
+  - [x] Default fallback fee ($2.80 RT) for symbols not in the table
+  - [x] Replace `ConstantFeeModel(0)` in `ProjectXBrokerageModel.GetFeeModel()` with `ProjectXFeeModel`
 
-- [ ] **Commission Structure**
-  - [ ] Per-contract commission rates
-  - [ ] Volume-based tiering (if applicable)
-  - [ ] Round-turn vs per-side modeling
-
-- [ ] **Exchange Fees**
-  - [ ] CME fees by product
-  - [ ] CBOT fees
-  - [ ] NYMEX/COMEX fees
-  - [ ] Pass-through fee structure
-
-- [ ] **Regulatory Fees**
-  - [ ] NFA fees
-  - [ ] Clearing fees
-  - [ ] Section 31 fees (if applicable)
-
-- [ ] **Slippage Modeling**
-  - [ ] Market impact estimation
-  - [ ] Bid-ask spread costs
-  - [ ] Configurable slippage model
+- [x] **Unit Tests** (`ProjectXBrokerageModelTests.cs`)
+  - [x] `GetFeeModel_ReturnsProjectXFeeModelInstance`
+  - [x] Spot-check ES → $1.40/side, MES → $0.37/side, NQ → $1.40/side, ZB → $0.89/side
+  - [x] Unknown symbol falls back to $1.40/side (default $2.80 RT)
+  - [x] Fee scales linearly with quantity (5× ES → $7.00/side)
 
 **Deliverables:**
-- [ ] Complete IFeeModel
-- [ ] Fee calculation test suite
-- [ ] Documentation of fee structure
-- [ ] Fee configuration examples
+- [x] `ProjectXFeeModel.cs`
+- [x] `ProjectXBrokerageModelTests.cs`
+- [x] `ProjectXBrokerageModel.GetFeeModel()` updated
 
 ### Phase 9: Testing & Documentation
 **Objective:** Comprehensive testing and documentation
