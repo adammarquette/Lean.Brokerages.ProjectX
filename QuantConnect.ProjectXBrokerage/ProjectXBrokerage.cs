@@ -1257,6 +1257,15 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage
                     return false;
                 }
 
+                // Reject orders on expired futures contracts
+                if (order.Symbol.SecurityType == SecurityType.Future &&
+                    order.Symbol.ID.Date.Date < DateTime.UtcNow.Date)
+                {
+                    errorMessage = $"Futures contract {order.Symbol.Value} has expired (expiry: {order.Symbol.ID.Date:yyyy-MM-dd})";
+                    Log.Error($"ProjectXBrokerage.ValidateOrder(): {errorMessage}");
+                    return false;
+                }
+
                 // Validate order type support
                 switch (order.Type)
                 {
