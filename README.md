@@ -10,7 +10,7 @@ Here is the updated README.md content reflecting the current state of the projec
 
 ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin focused on futures trading.
 
-**Status:** Phases 1–6 Complete | API Refinements (PR #28 "Fix Gaps")  
+**Status:** Phases 1–9 Complete | Production Release (Phase 10) In Progress  
 **Last updated:** March 30, 2026  
 **Project lead:** Marquette Speculations  
 **Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
@@ -24,23 +24,22 @@ ProjectX integration for the QuantConnect LEAN Engine — a brokerage plugin foc
 This project provides a LEAN-compatible brokerage implementation that enables backtesting and live trading of **futures contracts** on ProjectX. The architecture is designed for future expansion to additional asset classes.
 
 ### Current State
-- **Phases 1–6 Complete:**
-  - Core trading, account sync, symbol mapping, brokerage model, live data, and historical data are implemented and tested.
+- **Phases 1–9 Complete:**
+  - Core trading, account sync, symbol mapping, brokerage model, live data, historical data, ToolBox bulk download, fee modeling, and comprehensive test suite are all implemented.
 - **In Progress:**
-  - Phase 7: Bulk data downloads (ToolBox)
-  - Phase 8: Fee modeling
-  - Phase 9: Comprehensive testing & documentation
   - Phase 10: Production release & LEAN integration
 
 ### Supported
 - Futures contracts (CME, CBOT, NYMEX, ICE)
-- Market, Limit, Stop Market, Stop Limit order types
+- Market, Limit, Stop Market, Stop Limit, Trailing Stop order types
 - Real-time and historical data
 - Thread-safe, bidirectional order ID mapping
+- Round-turn fee table for 57 futures products
 
 ### Not Supported (yet)
-- Market On Open/Close, Option Exercise, Bracket/OCO, Trailing Stop
+- Market On Open/Close, Option Exercise, Bracket/OCO
 - Asset classes other than futures (planned for future phases)
+- Level II (market depth) data
 
 ### Constraints
 - ProjectX API rate limits may impact data/order throughput
@@ -92,8 +91,59 @@ dotnet test --filter "Category!=RequiresApiCredentials&Category!=Integration"
 ### Documentation
 - **PRD.md** - Project requirements, architecture, and roadmap
 - **CONFIGURATION.md** - Configuration guide
+- **ARCHITECTURE.md** - Component design and data flow
+- **TROUBLESHOOTING.md** - Common problems and fixes
+- **CONTRIBUTING.md** - Development workflow and PR checklist
 - **DIAGRAMS.md** - Architecture diagrams
 - **CICD.md** - CI/CD documentation
+
+---
+
+## Algorithm Example
+
+The following minimal LEAN algorithm trades ES front-month futures on ProjectX:
+
+```csharp
+using System;
+using QuantConnect;
+using QuantConnect.Algorithm;
+using QuantConnect.Data;
+using QuantConnect.Indicators;
+
+public class ESMomentumAlgorithm : QCAlgorithm
+{
+    private Symbol _es;
+    private SimpleMovingAverage _fast;
+    private SimpleMovingAverage _slow;
+
+    public override void Initialize()
+    {
+        SetStartDate(2024, 1, 1);
+        SetEndDate(2025, 1, 1);
+        SetCash(50_000);
+
+        // Subscribe to front-month E-mini S&P 500 futures
+        _es = AddFuture("ES", Resolution.Minute,
+            dataNormalizationMode: DataNormalizationMode.BackwardsRatio).Symbol;
+
+        _fast = SMA(_es, 20, Resolution.Minute);
+        _slow = SMA(_es, 60, Resolution.Minute);
+    }
+
+    public override void OnData(Slice data)
+    {
+        if (!_fast.IsReady || !_slow.IsReady) return;
+
+        if (!Portfolio.Invested && _fast > _slow)
+            MarketOrder(_es, 1);          // long 1 contract
+
+        if (Portfolio.Invested && _fast < _slow)
+            Liquidate(_es);
+    }
+}
+```
+
+Point the algorithm at the ProjectX brokerage by setting `"brokerage": "ProjectXBrokerage"` in `config.json`.
 
 ---
 
@@ -153,10 +203,20 @@ export QC_BROKERAGE_PROJECT_X_ENVIRONMENT="sandbox"
 - Backtesting and warm-up data retrieval
 - Multiple resolutions (second, minute, hour, daily)
 
-### In Progress
-- Bulk data downloads (ToolBox)
-- Fee modeling (commission, exchange, regulatory, slippage)
-- Comprehensive test suite and documentation
+### Bulk Data Downloads (Phase 7)
+- ToolBox CLI for bulk historical data download
+- Exchange info downloader
+
+### Fee Modeling (Phase 8)
+- Round-turn commission table for 57 futures products (CME, CBOT, NYMEX, ICE)
+- Per-side fee calculation integrated into `ProjectXBrokerageModel`
+
+### Comprehensive Testing & Documentation (Phase 9)
+- LEAN `BrokerageTests` base-class integration (ES futures, 5 order types)
+- Moq-based unit tests for universe provider, order management, fee model
+- Thread-safety and concurrent-order performance regression tests
+- Coverage tooling via Coverlet
+- ARCHITECTURE.md, TROUBLESHOOTING.md, CONTRIBUTING.md
 
 ---
 

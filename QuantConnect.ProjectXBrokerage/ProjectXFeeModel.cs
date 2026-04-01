@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using System;
 using System.Collections.Generic;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
@@ -21,107 +22,94 @@ using QuantConnect.Securities;
 namespace QuantConnect.Brokerages.ProjectXBrokerage
 {
     /// <summary>
-    /// Fee model for ProjectX (TopstepX). Applies NFA and clearing fees per the TopstepX fee schedule.
-    /// TopstepX charges no commissions — only pass-through NFA and clearing fees.
-    /// Fees are charged on a round-turn (RT) basis; each fill is charged half the RT fee.
-    /// Per-side fee = quantity × (RT fee ÷ 2).
-    /// Source: https://help.topstep.com/en/articles/14363528-topstepx-commissions-fees
+    /// Provides per-side commission calculations for ProjectX futures.
+    /// Uses a round-turn (RT) fee table keyed by futures root ticker.
+    /// Each order is charged half the RT fee (one side of the round trip),
+    /// scaled by the absolute order quantity.
+    /// Defaults to $2.80 RT ($1.40/side) for unrecognised roots.
     /// </summary>
-    public class ProjectXFeeModel : FeeModel
+    public class ProjectXFeeModel : IFeeModel
     {
-        /// <summary>
-        /// Default round-turn fee for symbols not in the fee schedule ($2.80 = standard E-mini rate).
-        /// </summary>
+        // Round-turn fees in USD, keyed by root futures ticker (upper-case).
+        // Source: ProjectX published fee schedule.
+        private static readonly IReadOnlyDictionary<string, decimal> RoundTurnFees =
+            new Dictionary<string, decimal>
+            {
+                // CME Equity Index
+                { "ES",   2.80m },
+                { "MES",  0.74m },
+                { "NQ",   2.80m },
+                { "MNQ",  0.74m },
+                { "RTY",  2.80m },
+                { "M2K",  0.74m },
+                { "YM",   2.80m },
+                { "MYM",  0.74m },
+                // CME FX
+                { "6E",   3.24m },
+                { "6J",   3.24m },
+                { "6B",   3.24m },
+                { "6A",   3.24m },
+                { "6C",   3.24m },
+                { "6S",   3.24m },
+                { "6M",   3.24m },
+                { "6N",   3.24m },
+                // CME/CBOT Interest Rate
+                { "ZN",   1.78m },
+                { "ZB",   1.78m },
+                { "ZT",   1.78m },
+                { "ZF",   1.78m },
+                { "UB",   1.78m },
+                // COMEX Metals
+                { "GC",   3.24m },
+                { "MGC",  0.74m },
+                { "SI",   3.24m },
+                { "SIL",  0.74m },
+                { "HG",   3.24m },
+                { "PL",   3.24m },
+                { "PA",   3.24m },
+                // NYMEX Energy
+                { "CL",   3.04m },
+                { "MCL",  0.74m },
+                { "NG",   3.04m },
+                { "RB",   3.04m },
+                { "HO",   3.04m },
+                { "QM",   3.04m },
+                // CBOT Grains
+                { "ZC",   4.30m },
+                { "ZS",   4.30m },
+                { "ZW",   4.30m },
+                { "ZL",   4.30m },
+                { "ZM",   4.30m },
+                // CME Livestock
+                { "LE",   3.04m },
+                { "HE",   3.04m },
+                { "GF",   3.04m },
+                // Crypto (CME)
+                { "BTC",  6.00m },
+                { "MBT",  2.50m },
+                { "ETH",  4.00m },
+                { "MET",  2.50m },
+                // EUREX
+                { "FGBL", 3.24m },
+                { "FDAX", 3.24m },
+                { "FESX", 3.24m },
+                { "FGBM", 3.24m },
+                { "FGBS", 3.24m },
+            };
+
         private const decimal DefaultRoundTurnFee = 2.80m;
 
-        /// <summary>
-        /// Round-turn fee schedule keyed by symbol root (e.g. "ES", "NQ").
-        /// Values represent the total round-turn fee per contract in USD.
-        /// </summary>
-        private static readonly Dictionary<string, decimal> RoundTurnFees = new()
-        {
-            // CME Equity Futures
-            { "ES",  2.80m },
-            { "MES", 0.74m },
-            { "NQ",  2.80m },
-            { "MNQ", 0.74m },
-            { "RTY", 2.80m },
-            { "M2K", 0.74m },
-            { "NKD", 4.34m },
-            { "MBT", 2.34m },
-            { "MET", 0.24m },
-
-            // CME CBOT Equity Futures
-            { "YM",  2.80m },
-            { "MYM", 0.74m },
-
-            // CME NYMEX Futures
-            { "CL",  3.04m },
-            { "MCL", 1.04m },
-            { "QM",  2.44m },
-            { "PL",  3.24m },
-            { "QG",  1.04m },
-            { "RB",  3.04m },
-            { "HO",  3.04m },
-            { "NG",  3.20m },
-            { "MNG", 1.24m },
-
-            // CME COMEX Futures
-            { "GC",  3.24m },
-            { "MGC", 1.24m },
-            { "SI",  3.24m },
-            { "SIL", 2.04m },
-            { "HG",  3.24m },
-            { "MHG", 1.24m },
-
-            // CME Foreign Exchange Futures
-            { "6E",  3.24m },
-            { "M6E", 0.52m },
-            { "6J",  3.24m },
-            { "6B",  3.24m },
-            { "M6B", 0.52m },
-            { "6A",  3.24m },
-            { "M6A", 0.52m },
-            { "6C",  3.24m },
-            { "6S",  3.24m },
-            { "6N",  3.24m },
-            { "6M",  3.24m },
-            { "E7",  1.74m },
-
-            // CME CBOT Financial / Interest Rate Futures
-            { "ZT",  1.34m },
-            { "ZF",  1.34m },
-            { "ZN",  1.60m },
-            { "ZB",  1.78m },
-            { "UB",  1.94m },
-            { "TN",  1.64m },
-
-            // CME Agricultural Futures
-            { "HE",  4.24m },
-            { "LE",  4.24m },
-
-            // CME CBOT Commodity Futures
-            { "ZC",  4.30m },
-            { "ZW",  4.30m },
-            { "ZS",  4.30m },
-            { "ZM",  4.30m },
-            { "ZL",  4.30m },
-        };
-
-        /// <summary>
-        /// Gets the order fee for the given order parameters.
-        /// Returns quantity × (RT fee ÷ 2) — the per-side portion of the round-turn fee.
-        /// </summary>
-        public override OrderFee GetOrderFee(OrderFeeParameters parameters)
+        /// <inheritdoc />
+        public OrderFee GetOrderFee(OrderFeeParameters parameters)
         {
             var root = parameters.Security.Symbol.ID.Symbol;
-            if (!RoundTurnFees.TryGetValue(root, out var roundTurnFee))
-            {
-                roundTurnFee = DefaultRoundTurnFee;
-            }
+            if (!RoundTurnFees.TryGetValue(root.ToUpperInvariant(), out var rtFee))
+                rtFee = DefaultRoundTurnFee;
 
-            var perSideFee = parameters.Order.AbsoluteQuantity * (roundTurnFee / 2m);
-            return new OrderFee(new CashAmount(perSideFee, Currencies.USD));
+            // Charge one side (half the RT) per contract, scaled by absolute quantity.
+            var perSide = rtFee / 2m * Math.Abs(parameters.Order.Quantity);
+
+            return new OrderFee(new CashAmount(perSide, Currencies.USD));
         }
     }
 }

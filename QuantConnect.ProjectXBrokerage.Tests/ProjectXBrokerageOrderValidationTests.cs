@@ -39,7 +39,7 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             Config.Set("brokerage-project-x-api-secret", "unit-test-secret");
             Config.Set("brokerage-project-x-environment", "sandbox");
             _brokerage = new ProjectXBrokerage(new TestDataAggregator());
-            _testSymbol = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
+            _testSymbol = ProjectXBrokerageTestsHelper.GetFrontMonthES();
         }
 
         [TearDown]
@@ -246,6 +246,49 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
             var result = InvokeValidateOrder(new MarketOrder(universe, 1, DateTime.UtcNow), out var error);
             Assert.IsFalse(result);
             Assert.That(error, Does.Contain("not supported"));
+        }
+
+        // ── Rapid re-connection guard ────────────────────────────────────────────
+
+        [Test]
+        public void ValidateOrder_DisconnectMidOrder_ReturnsFalse()
+        {
+            // Simulate: brokerage was connected when order arrived but lost connection
+            // before validation completes.
+            SetConnected(true);
+            var order = new MarketOrder(_testSymbol, 1, DateTime.UtcNow);
+            // Flip connected to false before validation
+            SetConnected(false);
+
+            var result = InvokeValidateOrder(order, out var error);
+
+            Assert.IsFalse(result);
+            Assert.That(error, Does.Contain("Not connected").Or.Contain("not connected"),
+                "Should report connection failure when state changes under the order");
+        }
+
+        [Test]
+        public void ValidateOrder_ExpiredFuturesContract_ReturnsFalse()
+        {
+            SetConnected(true);
+            // A contract whose expiry is clearly in the past
+            var expired = Symbol.CreateFuture("ES", Market.CME, new DateTime(2000, 3, 17));
+            var result = InvokeValidateOrder(new MarketOrder(expired, 1, DateTime.UtcNow), out var error);
+
+            // Expired contracts are not tradeable; validation should fail
+            Assert.IsFalse(result);
+        }
+
+        [Test]
+        public void ValidateOrder_LimitPrice_Zero_ReturnsFalse()
+        {
+            SetConnected(true);
+            var order = new LimitOrder(_testSymbol, quantity: 1, limitPrice: 0m, time: DateTime.UtcNow);
+
+            var result = InvokeValidateOrder(order, out var error);
+
+            Assert.IsFalse(result,
+                "A limit order with price 0 is invalid; ValidateOrder should reject it");
         }
     }
 }

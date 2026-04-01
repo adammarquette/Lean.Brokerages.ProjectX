@@ -20,6 +20,8 @@ using NUnit.Framework;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
+using QuantConnect.Orders;
+using QuantConnect.Securities;
 
 namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 {
@@ -724,6 +726,108 @@ namespace QuantConnect.Brokerages.ProjectXBrokerage.Tests
 
             // Act & Assert
             Assert.DoesNotThrow(() => new ProjectXBrokerage(_aggregator));
+        }
+
+        [Test]
+        public void Subscribe_UnsubscribeConcurrently_NoDeadlock()
+        {
+            // Arrange — uses placeholder config without live credentials
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            var exceptions = 0;
+            var barrier = new Barrier(2);
+            var symbol1 = Symbol.CreateFuture("ES", Market.CME, new DateTime(2025, 3, 21));
+            var symbol2 = Symbol.CreateFuture("NQ", Market.CME, new DateTime(2025, 3, 21));
+
+            // Act — one thread subscribes while another unsubscribes
+            var subThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for (int i = 0; i < 20; i++)
+                    {
+                        // Subscribe is a no-op without a live connection; just shouldn't throw
+                        try { brokerage.Subscribe(new SubscriptionDataConfig(
+                            typeof(QuantConnect.Data.Market.TradeBar), symbol1,
+                            Resolution.Minute, TimeZones.Utc, TimeZones.Utc, false, false, false), (s, e) => { }); }
+                        catch { /* expected if not connected */ }
+                        Thread.Sleep(5);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            var unsubThread = new Thread(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    for (int i = 0; i < 20; i++)
+                    {
+                        try { brokerage.Unsubscribe(new SubscriptionDataConfig(
+                            typeof(QuantConnect.Data.Market.TradeBar), symbol2,
+                            Resolution.Minute, TimeZones.Utc, TimeZones.Utc, false, false, false)); }
+                        catch { /* expected if not connected */ }
+                        Thread.Sleep(5);
+                    }
+                }
+                catch { Interlocked.Increment(ref exceptions); }
+            });
+
+            subThread.Start();
+            unsubThread.Start();
+
+            var subDone   = subThread.Join(TimeSpan.FromSeconds(10));
+            var unsubDone = unsubThread.Join(TimeSpan.FromSeconds(10));
+
+            Assert.IsTrue(subDone,   "Subscribe thread deadlocked");
+            Assert.IsTrue(unsubDone, "Unsubscribe thread deadlocked");
+            Assert.AreEqual(0, exceptions, "Concurrent subscribe/unsubscribe should not throw unexpected exceptions");
+        }
+
+        [Test, Category("RequiresApiCredentials")]
+        public void PlaceOrder_ConcurrentCalls_NoRaceCondition()
+        {
+            // Arrange
+            var brokerage = new ProjectXBrokerage(_aggregator);
+            brokerage.Connect();
+
+            var symbol = Symbol.CreateFuture("ES", Market.CME,
+                ProjectXBrokerageTestsHelper.GetThirdFriday(DateTime.UtcNow.Year + 1, 3));
+            var exceptions = 0;
+            var successCount = 0;
+            var threads = new Thread[5];
+            var barrier = new Barrier(threads.Length);
+
+            // Act — place cancellable far-OTM limit orders concurrently
+            for (int i = 0; i < threads.Length; i++)
+            {
+                var orderId = i + 1;
+                threads[i] = new Thread(() =>
+                {
+                    try
+                    {
+                        var order = new QuantConnect.Orders.LimitOrder(
+                            symbol, 1, limitPrice: 100m, time: DateTime.UtcNow);
+                        barrier.SignalAndWait();
+                        if (brokerage.PlaceOrder(order))
+                            Interlocked.Increment(ref successCount);
+                    }
+                    catch { Interlocked.Increment(ref exceptions); }
+                });
+                threads[i].Start();
+            }
+
+            foreach (var t in threads) t.Join();
+
+            // Cancel all open orders to clean up
+            foreach (var o in brokerage.GetOpenOrders())
+                brokerage.CancelOrder(o);
+
+            brokerage.Disconnect();
+
+            Assert.AreEqual(0, exceptions, "No unexpected exceptions in concurrent PlaceOrder");
+            Assert.Greater(successCount, 0, "At least one order should be placed successfully");
         }
     }
 

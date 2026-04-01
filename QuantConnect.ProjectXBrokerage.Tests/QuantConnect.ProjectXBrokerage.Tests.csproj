@@ -16,6 +16,16 @@
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
         <AnalysisLevel>latest</AnalysisLevel>
+
+        <!-- Coverlet code coverage configuration -->
+        <!-- Run: dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=lcov /p:CoverletOutput=./coverage/ -->
+        <CollectCoverage>false</CollectCoverage>
+        <CoverletOutputFormat>lcov</CoverletOutputFormat>
+        <CoverletOutput>./coverage/</CoverletOutput>
+        <!-- Only measure coverage of the production assembly -->
+        <Include>[QuantConnect.ProjectXBrokerage]*</Include>
+        <!-- Exclude generated code, program entry points, and ToolBox utilities -->
+        <Exclude>[QuantConnect.ProjectXBrokerage]QuantConnect.Brokerages.ProjectXBrokerage.ProjectXBrokerageFactory,[QuantConnect.ProjectXBrokerage.ToolBox]*</Exclude>
     </PropertyGroup>
 
     <ItemGroup>
@@ -30,6 +40,14 @@
         </PackageReference>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.9.4" />
         <PackageReference Include="coverlet.collector" Version="8.0.1">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="coverlet.msbuild" Version="6.0.4">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="ReportGenerator" Version="5.3.11">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
