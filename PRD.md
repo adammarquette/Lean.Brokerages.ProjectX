@@ -755,15 +755,9 @@ HFT strategies requiring sub-millisecond latency and ultra-high order throughput
 ### Asset Class Limitations (Phase 1-4)
 
 **Futures Only**
-- Initial releases (Phases 1-4) support futures contracts exclusively
-- Equities, options, forex, and crypto support planned for future phases
+- This brokerage integration supports futures contracts exclusively
 - Symbol mapper focused on futures ticker formats
 - Margin calculations specific to futures contracts
-
-**Future Expansion:**
-- Phase 5+: Equities support
-- Phase 6+: Options on futures
-- Phase 7+: Forex and crypto futures
 
 ### Technical Constraints
 
@@ -793,46 +787,14 @@ HFT strategies requiring sub-millisecond latency and ultra-high order throughput
 - Settlement times respected per exchange rules
 
 **Order Types (Phase 1-4)**
-- Supported: Market, Limit, Stop Market, Stop Limit
-- Not Supported: Bracket orders, OCO (One-Cancels-Other), trailing stops
+- Supported: Market, Limit, Stop Market, Stop Limit, Trailing Stop
+- Not Supported: Bracket orders, OCO (One-Cancels-Other)
 - Advanced order types may be added in future phases
 
 **Account Types**
 - Live trading requires funded ProjectX account
 - Paper trading uses ProjectX sandbox environment
 - No simulated brokerage mode (must have ProjectX account)
-
-## Risk Management & Mitigation
-
-### Technical Risks
-
-| Risk | Impact | Probability | Mitigation Strategy |
-|------|--------|-------------|---------------------|
-| **MarqSpec.Client.ProjectX Breaking Changes** | High | Medium | Pin to stable version; monitor repository; maintain version compatibility matrix |
-| **ProjectX API Changes** | High | Medium | Regular communication with ProjectX; version API calls; maintain backward compatibility |
-| **Rate Limiting** | Medium | High | Implement request throttling; queue management; user documentation on limits |
-| **WebSocket Disconnections** | High | Medium | Automatic reconnection; connection monitoring; graceful degradation |
-| **Data Quality Issues** | Medium | Medium | Validation layer; data quality monitoring; alert on anomalies |
-| **Performance Degradation** | Medium | Low | Performance testing; monitoring; optimization hot paths |
-| **Memory Leaks** | Medium | Low | Profiling; code review; dispose pattern; automated testing |
-
-### Business Risks
-
-| Risk | Impact | Probability | Mitigation Strategy |
-|------|--------|-------------|---------------------|
-| **Limited Adoption** | Medium | Medium | Comprehensive documentation; community engagement; support channels |
-| **ProjectX Platform Changes** | High | Low | Diversify development; maintain flexibility; community communication |
-| **Support Burden** | Medium | Medium | Clear documentation; FAQ; community support; issue templates |
-| **Regulatory Changes** | Low | Low | Monitor regulatory landscape; design for compliance flexibility |
-
-### Operational Risks
-
-| Risk | Impact | Probability | Mitigation Strategy |
-|------|--------|-------------|---------------------|
-| **Incomplete Testing** | High | Medium | Comprehensive test plan; code coverage requirements; paper trading validation |
-| **Security Vulnerabilities** | High | Low | Security audits; dependency scanning; secure coding practices |
-| **Documentation Gaps** | Medium | High | Documentation requirements in DoD; peer review; user feedback |
-| **Maintenance Costs** | Medium | Medium | Clean code; good architecture; automated testing; community contributions |
 
 ## Risk Management & Mitigation
 
@@ -1698,5 +1660,5 @@ sequenceDiagram
 ---
 
 **Document Version:** 2.0  
-**Last Updated:** March 2026  
-**Next Review:** After Phase 2 Completion
+**Last Updated:** April 2026  
+**Next Review:** After Phase 7 Completion
