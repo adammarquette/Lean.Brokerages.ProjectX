@@ -1,7 +1,7 @@
 # ProjectX LEAN Brokerage Integration
 
-**Status:** Phases 1–6 Complete | API Refinements (PR #28 "Fix Gaps")  
-**Last Updated:** March 29, 2026
+**Status:** Phases 1–9 Complete | Branch Protection & CI/CD Hardening  
+**Last Updated:** April 2, 2026
 **Project Lead:** Marquette Speculations  
 **Repository:** https://github.com/adammarquette/Lean.Brokerages.ProjectX
 
@@ -166,7 +166,7 @@ A C# client library providing programmatic access to ProjectX's trading API, ser
 
 **Reference:** https://github.com/adammarquette/MarqSpec.Client.ProjectX  
 **Language:** C# (.NET compatible)  
-**License:** [Verify from repository]
+**License:** Apache 2.0 (see [LICENSE](LICENSE))
 
 **Repository Structure:**
 - `MarqSpec.Client.ProjectX/` - Core API client library
@@ -620,7 +620,7 @@ The brokerage wraps MarqSpec.Client.ProjectX to:
   - [ ] Clean commit history
   - [ ] Remove sensitive data
   - [ ] Finalize README
-  - [ ] License verification
+  - [ ] [LICENSE](LICENSE) verification
   - [ ] Changelog preparation
 
 - [ ] **LEAN Integration**
