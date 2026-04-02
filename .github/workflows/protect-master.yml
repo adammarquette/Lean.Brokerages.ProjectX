@@ -67,6 +67,23 @@ jobs:
         run: |
           MAX_BYTES=1048576  # 1 MB
 
+          # Explicit allowlist for required test fixtures that exceed 1 MB.
+          # Keep this list tight to avoid weakening the guardrail.
+          ALLOWED_LARGE_FILES=(
+            "QuantConnect.ProjectXBrokerage.Tests/TestData/FillForwardBars.zip"
+            "QuantConnect.ProjectXBrokerage.Tests/TestData/FuturesExpiryFunctionsTestData.xml"
+          )
+
+          is_allowed_large_file() {
+            local candidate="$1"
+            for allowed in "${ALLOWED_LARGE_FILES[@]}"; do
+              if [ "$candidate" = "$allowed" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
           # On a PR compare against the base; on a push compare HEAD^ vs HEAD.
           # Fall back to the empty-tree SHA when there is no parent commit.
           EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -77,10 +94,15 @@ jobs:
           fi
 
           LARGE_FILES=""
+          ALLOWED_OVERSIZED_FILES=""
           while IFS= read -r -d '' file; do
             SIZE=$(wc -c < "$file")
             if [ "$SIZE" -gt "$MAX_BYTES" ]; then
-              LARGE_FILES="$LARGE_FILES\n  $file ($(( SIZE / 1024 )) KB)"
+              if is_allowed_large_file "$file"; then
+                ALLOWED_OVERSIZED_FILES="$ALLOWED_OVERSIZED_FILES\n  $file ($(( SIZE / 1024 )) KB)"
+              else
+                LARGE_FILES="$LARGE_FILES\n  $file ($(( SIZE / 1024 )) KB)"
+              fi
             fi
           done < <(git diff --name-only "$BASE_SHA" HEAD -- | tr '\n' '\0')
 
@@ -88,6 +110,10 @@ jobs:
             echo "::error::❌ Files exceeding 1 MB detected:$LARGE_FILES"
             echo "Use Git LFS for large assets instead of committing them directly."
             exit 1
+          fi
+
+          if [ -n "$ALLOWED_OVERSIZED_FILES" ]; then
+            echo "::warning::⚠️ Allowlisted oversized files detected:$ALLOWED_OVERSIZED_FILES"
           fi
 
           echo "✅ All changed files are within the 1 MB size limit."
