@@ -257,4 +257,4 @@ Please open issues and PRs against this repository. Follow the branching workflo
 
 ## License
 
-See the repository `LICENSE` file.
+See the [LICENSE](LICENSE) file.
