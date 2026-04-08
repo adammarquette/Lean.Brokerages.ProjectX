@@ -35,8 +35,8 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="QuantConnect.Brokerages" Version="2.5.17573" />
-        <PackageReference Include="QuantConnect.Common" Version="2.5.17573" />
-        <PackageReference Include="QuantConnect.Configuration" Version="2.5.17573" />
+        <PackageReference Include="QuantConnect.Common" Version="2.5.17654" />
+        <PackageReference Include="QuantConnect.Configuration" Version="2.5.17654" />
         <PackageReference Include="QuantConnect.ToolBox" Version="2.5.17573" />
     </ItemGroup>
     <ItemGroup>
