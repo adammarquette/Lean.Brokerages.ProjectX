@@ -37,7 +37,7 @@
         <PackageReference Include="QuantConnect.Brokerages" Version="2.5.17573" />
         <PackageReference Include="QuantConnect.Common" Version="2.5.17573" />
         <PackageReference Include="QuantConnect.Configuration" Version="2.5.17573" />
-        <PackageReference Include="QuantConnect.ToolBox" Version="2.5.17573" />
+        <PackageReference Include="QuantConnect.ToolBox" Version="2.5.17654" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\QuantConnect.ProjectXBrokerage\QuantConnect.ProjectXBrokerage.csproj" />
